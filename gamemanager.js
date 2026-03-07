@@ -243,3 +243,162 @@ class GameManager {
     pop();
   }
 }
+
+class GameManager {
+  triggerGameOver(reason) {
+    if (this.gameState !== "playing") return;
+    this.gameState = "game-over";
+    this.finalScore = Math.floor(this.score);
+    this.gameOverReason = reason;
+
+    if (document.exitPointerLock) document.exitPointerLock();
+
+    if (this.gameOverOverlay) {
+      this.gameOverOverlay.classList.add("visible");
+      this.gameOverOverlay.setAttribute("aria-hidden", "false");
+    }
+    if (this.finalScoreEl) this.finalScoreEl.textContent = String(this.finalScore);
+    if (this.gameOverReasonEl) this.gameOverReasonEl.textContent = reason;
+  }
+
+  survivalSeconds() {
+    return max(0, (millis() - this.gameStartMs) / 1000);
+  }
+
+  updateGame(dt) {
+    this.player.update(dt);
+    this.spawnOrbsIfNeeded();
+    this.advanceCorruption();
+    this.updateOrbs(dt);
+    this.updateParticles(dt);
+    this.handleCollisions();
+    this.score += SURVIVAL_POINTS_PER_SECOND * dt;
+  }
+
+  spawnOrbsIfNeeded() {
+    const now = millis();
+    const elapsed = this.survivalSeconds();
+    const interval = max(
+      ORB_SPAWN_INTERVAL_MIN_MS,
+      ORB_SPAWN_INTERVAL_INITIAL_MS - elapsed * ORB_SPAWN_ACCEL_MS_PER_SEC
+    );
+
+    while (now - this.lastSpawnMs >= interval) {
+      this.spawnOrb();
+      this.lastSpawnMs += interval;
+    }
+  }
+
+  spawnOrb() {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const col = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
+      const row = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
+      if (worldTileMap[row][col] !== 0) continue;
+
+      const wx = col + 0.5;
+      const wy = row + 0.5;
+      if (Math.hypot(wx - this.player.posX, wy - this.player.posY) < 3) continue;
+
+      const mutDelay = random(MIN_MUTATION_DELAY_MS, MAX_MUTATION_DELAY_MS);
+      const speed = ENEMY_BASE_SPEED + this.survivalSeconds() * ENEMY_SPEED_GROWTH;
+      this.orbs.push(new Orb(wx, wy, mutDelay, speed));
+      return;
+    }
+  }
+
+  advanceCorruption() {
+    const elapsed = this.survivalSeconds();
+    if (elapsed < CORRUPTION_START_DELAY_SECONDS) return;
+
+    const timeSinceLast = elapsed - this.lastCorruptionTime;
+    if (this.lastCorruptionTime === 0) {
+      this.lastCorruptionTime = elapsed;
+      return;
+    }
+
+    if (timeSinceLast >= CORRUPTION_INTERVAL_SECONDS) {
+      this.lastCorruptionTime = elapsed;
+      this.corruptionLayer++;
+      this.applyCorruptionLayer(this.corruptionLayer);
+      this.addScreenShake(4, 300);
+    }
+  }
+
+  applyCorruptionLayer(layer) {
+    const lo = layer;
+    const hi = MAP_TILE_COUNT - 1 - layer;
+    if (lo >= hi) {
+      this.triggerGameOver("The corruption consumed the entire arena.");
+      return;
+    }
+
+    for (let col = lo; col <= hi; col++) {
+      if (worldTileMap[lo][col] === 0) worldTileMap[lo][col] = 6;
+      if (worldTileMap[hi][col] === 0) worldTileMap[hi][col] = 6;
+    }
+    for (let row = lo; row <= hi; row++) {
+      if (worldTileMap[row][lo] === 0) worldTileMap[row][lo] = 6;
+      if (worldTileMap[row][hi] === 0) worldTileMap[row][hi] = 6;
+    }
+  }
+
+  updateOrbs(dt) {
+    for (const orb of this.orbs) orb.update(dt, this.player);
+  }
+
+  updateParticles(dt) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      this.particles[i].update(dt);
+      if (this.particles[i].isDead()) this.particles.splice(i, 1);
+    }
+  }
+
+  handleCollisions() {
+    const offsets = [
+      { dx: -this.player.radius, dy: -this.player.radius },
+      { dx: this.player.radius, dy: -this.player.radius },
+      { dx: -this.player.radius, dy: this.player.radius },
+      { dx: this.player.radius, dy: this.player.radius },
+    ];
+
+    for (const off of offsets) {
+      const tc = Math.floor(this.player.posX + off.dx);
+      const tr = Math.floor(this.player.posY + off.dy);
+      if (tc >= 0 && tc < MAP_TILE_COUNT && tr >= 0 && tr < MAP_TILE_COUNT) {
+        if (worldTileMap[tr][tc] === 6) {
+          this.triggerGameOver("You touched the corruption wall!");
+          return;
+        }
+      }
+    }
+
+    for (let i = this.orbs.length - 1; i >= 0; i--) {
+      const orb = this.orbs[i];
+      const dx = this.player.posX - orb.posX;
+      const dy = this.player.posY - orb.posY;
+      const distSq = dx * dx + dy * dy;
+      const combinedR = this.player.radius + orb.radius;
+
+      if (distSq <= combinedR * combinedR) {
+        if (orb.isSafe()) {
+          this.score += ORB_COLLECT_BONUS;
+          this.spawnCollectParticles(orb.posX, orb.posY, [92, 255, 145]);
+          this.orbs.splice(i, 1);
+        } else if (orb.isWarning()) {
+          this.score += ORB_COLLECT_BONUS * 2;
+          this.spawnCollectParticles(orb.posX, orb.posY, [255, 200, 60]);
+          this.orbs.splice(i, 1);
+        } else {
+          this.triggerGameOver("A mutated hunter caught you!");
+          return;
+        }
+      }
+    }
+  }
+
+  spawnCollectParticles(wx, wy, col) {
+    for (let i = 0; i < 10; i++) {
+      this.particles.push(new Particle(wx, wy, col));
+    }
+  }
+}
