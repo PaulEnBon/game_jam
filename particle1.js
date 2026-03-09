@@ -1,6 +1,3 @@
-/*
-  Extrait PAUL - particules
-*/
 
 class Particle {
   constructor(worldX, worldY, colorArray) {

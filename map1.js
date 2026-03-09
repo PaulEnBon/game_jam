@@ -1,6 +1,4 @@
-/*
-  Extrait PAUL - generation des decors (map)
-*/
+
 
 let worldTileMap = [];
 

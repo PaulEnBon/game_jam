@@ -1,6 +1,3 @@
-/*
-  Extrait PAUL - textures procedurales
-*/
 
 let blockTextures = {};
 let texturePixelCache = {};

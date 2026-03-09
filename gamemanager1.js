@@ -1,6 +1,4 @@
-/*
-  Extrait PAUL - rendu decor/texture/particules dans GameManager
-*/
+
 
 class GameManager {
   addScreenShake(intensity, durationMs) {
