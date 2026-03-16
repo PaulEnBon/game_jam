@@ -1,4 +1,4 @@
-
+﻿
 
 class GameManager {
   initDOM() {
@@ -2648,8 +2648,834 @@ class GameManager {
     const factor = currentSpeed / base;
     return constrain(factor, ZOMBIE_ANIM_SPEED_MIN, ZOMBIE_ANIM_SPEED_MAX);
   }
+constructor() {
+    this.gameState = "waiting";
+    this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
+    this.orbs = [];
+    this.particles = [];
+    this.worldModules = [];
+    this.drops = [];
+    this.missionBeacons = [];
+    this.extractionPortal = null;
+    this.punchMachine = null;
 
+    this.inventory = {
+      ammoPack: 0,
+      scoreShard: 0,
+      pulseCore: 0,
+    };
+    this.selectedHotbarSlot = 1;
+
+    this.hudToastText = "";
+    this.hudToastColor = [220, 240, 255];
+    this.hudToastUntilMs = 0;
+
+    this.score = 0;
+    this.finalScore = 0;
+    this.gameOverReason = "";
+    this.gameWon = false;
+
+    this.killStreak = 0;
+    this.killStreakUntilMs = 0;
+
+    this.waveNumber = 0;
+    this.waveState = "preparing";
+    this.waveEnemiesTotal = 0;
+    this.waveEnemiesSpawned = 0;
+    this.waveEnemiesKilled = 0;
+    this.waveMaxSimultaneous = 0;
+    this.waveSpawnIntervalMs = 0;
+    this.nextWaveActionMs = 0;
+
+    this.sprintEnergy = SPRINT_ENERGY_MAX;
+    this.sprintActive = false;
+    this.lastSprintUseMs = 0;
+
+    this.powerDamageUntilMs = 0;
+    this.powerRapidUntilMs = 0;
+    this.powerInstakillUntilMs = 0;
+    this.punchMachineInteractLatch = false;
+
+    this.beaconsActivated = 0;
+    this.weaponAmmo = WEAPON_START_AMMO;
+    this.weaponLastShotMs = 0;
+    this.weaponFlashUntilMs = 0;
+
+    this.lastModuleSpawnMs = 0;
+    this.activeAegisUntilMs = 0;
+    this.activeChronoUntilMs = 0;
+    this.orbStunUntilMap = new Map();
+
+    this.gameStartMs = 0;
+    this.lastSpawnMs = 0;
+    this.lastCorruptionTime = 0;
+    this.corruptionLayer = 0;
+    this.pendingCorruptionTiles = [];
+
+    this.shakeIntensity = 0;
+    this.shakeDuration = 0;
+    this.shakeStartMs = 0;
+
+    this.startOverlay = null;
+    this.gameOverOverlay = null;
+    this.gameOverTitleEl = null;
+    this.finalScoreEl = null;
+    this.gameOverReasonEl = null;
+    this.restartBtn = null;
+    this.pauseOverlay = null;
+    this.resumeBtn = null;
+    this.pauseSettingsBtn = null;
+    this.pauseRestartBtn = null;
+    this.startBtn = null;
+    this.openSettingsBtn = null;
+    this.settingsOverlay = null;
+    this.closeSettingsBtn = null;
+    this.resetControlsBtn = null;
+    this.settingsStatusEl = null;
+    this.sensitivityInput = null;
+    this.sensitivityValueEl = null;
+    this.controlLegendEl = null;
+    this.bindButtons = [];
+
+    this.pendingRebindAction = null;
+    this.pendingRebindButton = null;
+    this.boundCaptureRebindKey = (event) => this.captureRebindKey(event);
+    this.canvasEl = null;
+
+    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+    this.zombieSpriteCache = this.createZombieSpriteCache();
+    this.collectOrbSpriteCache = this.createCollectOrbSpriteCache();
+    this.motionBlurEnabled = MOTION_BLUR_ENABLED;
+    this.motionBlurBuffer = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
+    this.motionBlurAmount = 0;
+    this.motionBlurFrameCounter = 0;
+    this.prevPlayerPosX = this.player.posX;
+    this.prevPlayerPosY = this.player.posY;
+    this.prevPlayerAngle = this.player.angle;
+  }
+
+  requestPointerLock() {
+    const cvs = document.querySelector("canvas");
+    if (cvs && cvs.requestPointerLock) cvs.requestPointerLock();
+  }
+
+  showPauseOverlay() {
+    if (!this.pauseOverlay) return;
+    this.pauseOverlay.classList.add("visible");
+    this.pauseOverlay.setAttribute("aria-hidden", "false");
+  }
+
+  hidePauseOverlay() {
+    if (!this.pauseOverlay) return;
+    this.pauseOverlay.classList.remove("visible");
+    this.pauseOverlay.setAttribute("aria-hidden", "true");
+  }
+
+  pauseGame() {
+    if (this.gameState !== "playing") return;
+    this.gameState = "paused";
+    this.sprintActive = false;
+    this.player.moveSpeed = PLAYER_MOVE_SPEED;
+    if (document.exitPointerLock) document.exitPointerLock();
+    this.showPauseOverlay();
+  }
+
+  resumeGame() {
+    if (this.gameState !== "paused") return;
+    this.closeSettingsMenu();
+    this.hidePauseOverlay();
+    this.gameState = "playing";
+    this.requestPointerLock();
+  }
+
+  handleEscapeKey() {
+    if (this.pendingRebindAction) {
+      this.cancelPendingRebind();
+      this.refreshBindingButtons();
+      this.setSettingsStatus("Modification annulée.");
+      return;
+    }
+
+    if (this.isSettingsVisible()) {
+      this.closeSettingsMenu();
+      return;
+    }
+
+    if (this.gameState === "playing") {
+      this.pauseGame();
+      return;
+    }
+
+    if (this.gameState === "paused") {
+      this.resumeGame();
+    }
+  }
+
+  handlePrimaryAction() {
+    if (this.gameState === "waiting") {
+      this.requestPointerLock();
+      this.startNewGame();
+      return;
+    }
+
+    if (this.gameState !== "playing") return;
+    if (this.isSettingsVisible()) return;
+
+    if (!this.isPointerLocked()) {
+      this.requestPointerLock();
+      return;
+    }
+
+    this.tryFireWeapon();
+  }
+
+  handleStartInput() {
+    if (this.gameState !== "waiting") return false;
+    if (this.isSettingsVisible()) return false;
+    this.requestPointerLock();
+    this.startNewGame();
+    return true;
+  }
+
+  handleHotbarInput(rawKey, rawKeyCode = null) {
+    if (this.gameState !== "playing") return false;
+    if (this.isSettingsVisible()) return false;
+
+    let slot = 0;
+    if (rawKey === "1" || rawKeyCode === 49 || rawKeyCode === 97) slot = 1;
+    else if (rawKey === "2" || rawKeyCode === 50 || rawKeyCode === 98) slot = 2;
+    else if (rawKey === "3" || rawKeyCode === 51 || rawKeyCode === 99) slot = 3;
+
+    if (slot === 0) return false;
+
+    this.selectedHotbarSlot = slot;
+
+    if (slot === 1) {
+      this.consumeInventoryItem("ammoPack");
+      return true;
+    }
+    if (slot === 2) {
+      this.consumeInventoryItem("scoreShard");
+      return true;
+    }
+    if (slot === 3) {
+      this.consumeInventoryItem("pulseCore");
+      return true;
+    }
+    return false;
+  }
+
+  handleMouseWheelSlot(deltaY) {
+    if (this.gameState !== "playing") return false;
+    if (this.isSettingsVisible()) return false;
+    if (typeof deltaY !== "number" || deltaY === 0) return false;
+
+    const dir = deltaY > 0 ? 1 : -1;
+    this.selectedHotbarSlot = ((this.selectedHotbarSlot - 1 + dir + 3) % 3) + 1;
+
+    if (this.selectedHotbarSlot === 1) {
+      this.pushHudToast("Slot actif: Ammo", [255, 220, 110]);
+    } else if (this.selectedHotbarSlot === 2) {
+      this.pushHudToast("Slot actif: Score", [255, 255, 150]);
+    } else {
+      this.pushHudToast("Slot actif: Pulse", [220, 180, 255]);
+    }
+
+    return true;
+  }
+
+  onViewportResize() {
+    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+    this.motionBlurBuffer = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
+    this.motionBlurAmount = 0;
+    this.motionBlurFrameCounter = 0;
+    this.syncMotionBlurReference();
+  }
+
+  startNewGame() {
+    this.closeSettingsMenu();
+    this.hidePauseOverlay();
+    generateWorldMap();
+
+    const now = millis();
+
+    this.gameState = "playing";
+    this.player.resetToSpawn();
+    this.player.moveSpeed = PLAYER_MOVE_SPEED;
+    this.orbs = [];
+    this.particles = [];
+    this.worldModules = [];
+    this.drops = [];
+    this.inventory.ammoPack = 0;
+    this.inventory.scoreShard = 0;
+    this.inventory.pulseCore = 0;
+    this.selectedHotbarSlot = 1;
+    this.hudToastText = "";
+    this.hudToastUntilMs = 0;
+    this.score = 0;
+    this.finalScore = 0;
+    this.gameOverReason = "";
+    this.gameWon = false;
+    this.killStreak = 0;
+    this.killStreakUntilMs = 0;
+    this.waveNumber = 0;
+    this.waveState = "preparing";
+    this.waveEnemiesTotal = 0;
+    this.waveEnemiesSpawned = 0;
+    this.waveEnemiesKilled = 0;
+    this.waveMaxSimultaneous = 0;
+    this.waveSpawnIntervalMs = 0;
+    this.nextWaveActionMs = now + WAVE_START_DELAY_MS;
+    this.sprintEnergy = SPRINT_ENERGY_MAX;
+    this.sprintActive = false;
+    this.lastSprintUseMs = 0;
+    this.powerDamageUntilMs = 0;
+    this.powerRapidUntilMs = 0;
+    this.powerInstakillUntilMs = 0;
+    this.punchMachineInteractLatch = false;
+    this.beaconsActivated = 0;
+    this.missionBeacons = [];
+    this.extractionPortal = null;
+    this.punchMachine = null;
+    this.weaponAmmo = WEAPON_START_AMMO;
+    this.weaponLastShotMs = 0;
+    this.weaponFlashUntilMs = 0;
+    this.corruptionLayer = 0;
+    this.pendingCorruptionTiles = [];
+    this.lastCorruptionTime = 0;
+    this.gameStartMs = now;
+    this.lastSpawnMs = now;
+    this.lastModuleSpawnMs = now;
+    this.activeAegisUntilMs = 0;
+    this.activeChronoUntilMs = 0;
+    this.orbStunUntilMap.clear();
+    this.shakeIntensity = 0;
+    this.motionBlurAmount = 0;
+    this.motionBlurFrameCounter = 0;
+    this.syncMotionBlurReference();
+    if (this.motionBlurBuffer) this.motionBlurBuffer.clear();
+
+    this.spawnInitialWorldModules();
+    this.spawnMissionBeacons();
+    this.spawnPunchMachine();
+    if (this.missionBeacons.length === 0) {
+      this.spawnExtractionPortal();
+    }
+
+    if (this.startOverlay) this.startOverlay.style.display = "none";
+    if (this.gameOverOverlay) {
+      this.gameOverOverlay.classList.remove("visible");
+      this.gameOverOverlay.classList.remove("victory");
+      this.gameOverOverlay.setAttribute("aria-hidden", "true");
+    }
+    if (this.gameOverTitleEl) this.gameOverTitleEl.textContent = "GAME OVER";
+
+    this.requestPointerLock();
+  }
+
+  triggerGameOver(reason) {
+    this.triggerEndState(reason, false, "GAME OVER");
+  }
+
+  triggerVictory(reason = "Extraction completed. You escaped alive.") {
+    this.triggerEndState(reason, true, "MISSION COMPLETE");
+  }
+
+  triggerEndState(reason, isVictory, titleText) {
+    if (this.gameState !== "playing") return;
+    this.gameState = "game-over";
+    this.finalScore = Math.floor(this.score);
+    this.gameOverReason = reason;
+    this.gameWon = isVictory;
+    this.player.moveSpeed = PLAYER_MOVE_SPEED;
+    this.sprintActive = false;
+
+    this.hidePauseOverlay();
+    this.closeSettingsMenu();
+
+    if (document.exitPointerLock) document.exitPointerLock();
+
+    if (this.gameOverOverlay) {
+      this.gameOverOverlay.classList.add("visible");
+      this.gameOverOverlay.classList.toggle("victory", isVictory);
+      this.gameOverOverlay.setAttribute("aria-hidden", "false");
+    }
+    if (this.gameOverTitleEl) this.gameOverTitleEl.textContent = titleText;
+    if (this.finalScoreEl) this.finalScoreEl.textContent = String(this.finalScore);
+    if (this.gameOverReasonEl) this.gameOverReasonEl.textContent = reason;
+  }
+
+  survivalSeconds() {
+    return max(0, (millis() - this.gameStartMs) / 1000);
+  }
+
+  runFrame() {
+    const dt = min(deltaTime / 1000, 0.05);
+
+    if (this.gameState === "playing") {
+      this.updateGame(dt);
+    }
+
+    this.updateMotionBlurState(dt);
+    this.renderFrame();
+  }
+
+  updateGame(dt) {
+    this.updateSprintState(dt);
+    this.player.update(dt);
+    this.updateWaveSystem();
+    this.updatePunchMachineInteraction();
+    this.advanceCorruption();
+    this.applyPendingCorruptionStep();
+    this.updateWorldModules(dt);
+    this.updateDrops(dt);
+    this.updateOrbs(dt);
+    this.updateParticles(dt);
+    this.handleCollisions();
+    if (this.gameState !== "playing") return;
+    this.handleModuleCollisions();
+    if (this.gameState !== "playing") return;
+    this.handleDropCollisions();
+    if (this.gameState !== "playing") return;
+    this.handleMissionCollisions();
+    if (this.gameState !== "playing") return;
+    this.updateKillStreakState();
+    this.score += SURVIVAL_POINTS_PER_SECOND * dt;
+  }
+
+  spawnPunchMachine() {
+    const fallback = {
+      x: MAP_TILE_COUNT / 2 + 2.5,
+      y: MAP_TILE_COUNT / 2 + 0.5,
+    };
+    const pos = this.findFreeWorldSpot(2.6) || fallback;
+
+    this.punchMachine = {
+      posX: constrain(pos.x, 1.5, MAP_TILE_COUNT - 1.5),
+      posY: constrain(pos.y, 1.5, MAP_TILE_COUNT - 1.5),
+      radius: PUNCH_MACHINE_RADIUS,
+      lastUseMs: -PUNCH_MACHINE_COOLDOWN_MS,
+    };
+  }
+
+  updatePunchMachineInteraction() {
+    if (!this.punchMachine) return;
+
+    const interactPressed = pressedKeyCodes.has("KeyF");
+    if (!interactPressed) {
+      this.punchMachineInteractLatch = false;
+      return;
+    }
+
+    if (this.punchMachineInteractLatch) return;
+    this.punchMachineInteractLatch = true;
+
+    const dist = Math.hypot(
+      this.player.posX - this.punchMachine.posX,
+      this.player.posY - this.punchMachine.posY
+    );
+    const interactRange = this.player.radius + this.punchMachine.radius + 0.34;
+    if (dist > interactRange) return;
+
+    this.activatePunchMachine();
+  }
+
+  spawnInitialWorldModules() {
+    const bootstrapTypes = ["aegis", "emp", "chrono"];
+    for (const type of bootstrapTypes) {
+      this.spawnWorldModule(type);
+    }
+    for (let i = bootstrapTypes.length; i < WORLD_MODULE_START_COUNT; i++) {
+      this.spawnWorldModule();
+    }
+  }
+
+  spawnMissionBeacons() {
+    this.missionBeacons = [];
+    this.beaconsActivated = 0;
+    this.extractionPortal = null;
+
+    const minSpacing = 4.5;
+    let attempts = 0;
+    while (this.missionBeacons.length < MISSION_BEACON_COUNT && attempts < 240) {
+      attempts++;
+      const pos = this.findFreeWorldSpot(4.8);
+      if (!pos) continue;
+      const tooClose = this.missionBeacons.some(
+        (beacon) => Math.hypot(pos.x - beacon.posX, pos.y - beacon.posY) < minSpacing
+      );
+      if (tooClose) continue;
+
+      this.missionBeacons.push({
+        posX: pos.x,
+        posY: pos.y,
+        radius: MISSION_BEACON_RADIUS,
+        activated: false,
+        pulseOffset: Math.random() * TWO_PI,
+      });
+    }
+
+    while (this.missionBeacons.length < MISSION_BEACON_COUNT) {
+      const pos = this.findFreeWorldSpot(2.6);
+      if (!pos) break;
+      this.missionBeacons.push({
+        posX: pos.x,
+        posY: pos.y,
+        radius: MISSION_BEACON_RADIUS,
+        activated: false,
+        pulseOffset: Math.random() * TWO_PI,
+      });
+    }
+  }
+
+  spawnExtractionPortal() {
+    if (this.extractionPortal) return;
+    const pos = this.findFreeWorldSpot(5.4) || this.findFreeWorldSpot(3);
+    if (!pos) return;
+
+    this.extractionPortal = {
+      posX: pos.x,
+      posY: pos.y,
+      radius: EXTRACTION_PORTAL_RADIUS,
+      spawnMs: millis(),
+    };
+
+    this.pushHudToast("Extraction prête: rejoins la faille !", [150, 255, 200]);
+    this.addScreenShake(3.5, 280);
+    this.spawnCollectParticles(pos.x, pos.y, [130, 255, 200]);
+  }
+
+  getNearestUnactivatedBeacon() {
+    let best = null;
+    for (const beacon of this.missionBeacons) {
+      if (beacon.activated) continue;
+      const dist = Math.hypot(beacon.posX - this.player.posX, beacon.posY - this.player.posY);
+      if (!best || dist < best.dist) {
+        best = { beacon, dist };
+      }
+    }
+    return best;
+  }
+
+  getCurrentObjectiveTarget() {
+    const nearestBeacon = this.getNearestUnactivatedBeacon();
+    if (nearestBeacon) {
+      return {
+        x: nearestBeacon.beacon.posX,
+        y: nearestBeacon.beacon.posY,
+        dist: nearestBeacon.dist,
+        label: "BALISE",
+      };
+    }
+
+    if (this.extractionPortal) {
+      return {
+        x: this.extractionPortal.posX,
+        y: this.extractionPortal.posY,
+        dist: Math.hypot(
+          this.extractionPortal.posX - this.player.posX,
+          this.extractionPortal.posY - this.player.posY
+        ),
+        label: "EXTRACT",
+      };
+    }
+
+    return null;
+  }
+
+  updateWorldModules(dt) {
+    const now = millis();
+
+    for (let i = this.worldModules.length - 1; i >= 0; i--) {
+      const wm = this.worldModules[i];
+      if (now - wm.spawnMs > WORLD_MODULE_LIFETIME_MS) {
+        this.worldModules.splice(i, 1);
+      }
+    }
+
+    while (now - this.lastModuleSpawnMs >= WORLD_MODULE_SPAWN_INTERVAL_MS) {
+      this.lastModuleSpawnMs += WORLD_MODULE_SPAWN_INTERVAL_MS;
+      if (this.worldModules.length < WORLD_MODULE_MAX_COUNT) {
+        this.spawnWorldModule();
+      }
+    }
+  }
+
+  spawnWorldModule(forcedType = null) {
+    const pos = this.findFreeWorldSpot(2.8);
+    if (!pos) return false;
+
+    const type = forcedType || this.randomModuleType();
+    this.worldModules.push({
+      type,
+      posX: pos.x,
+      posY: pos.y,
+      radius: WORLD_MODULE_RADIUS,
+      spawnMs: millis(),
+    });
+    return true;
+  }
+
+  randomModuleType() {
+    const types = ["aegis", "emp", "chrono"];
+    return types[Math.floor(Math.random() * types.length)];
+  }
+
+  isWalkableTile(row, col) {
+    if (row <= 0 || row >= MAP_TILE_COUNT - 1 || col <= 0 || col >= MAP_TILE_COUNT - 1) {
+      return false;
+    }
+    return worldTileMap[row][col] === 0;
+  }
+
+  countOpenCardinalNeighbors(row, col) {
+    let count = 0;
+    if (this.isWalkableTile(row - 1, col)) count++;
+    if (this.isWalkableTile(row + 1, col)) count++;
+    if (this.isWalkableTile(row, col - 1)) count++;
+    if (this.isWalkableTile(row, col + 1)) count++;
+    return count;
+  }
+
+  buildReachableTileMaskFromPlayer() {
+    const tileTotal = MAP_TILE_COUNT * MAP_TILE_COUNT;
+    const mask = new Uint8Array(tileTotal);
+
+    const startCol = Math.floor(this.player.posX);
+    const startRow = Math.floor(this.player.posY);
+    if (!this.isWalkableTile(startRow, startCol)) {
+      return mask;
+    }
+
+    const queue = [{ row: startRow, col: startCol }];
+    mask[startRow * MAP_TILE_COUNT + startCol] = 1;
+
+    for (let head = 0; head < queue.length; head++) {
+      const tile = queue[head];
+
+      const neighbors = [
+        { row: tile.row - 1, col: tile.col },
+        { row: tile.row + 1, col: tile.col },
+        { row: tile.row, col: tile.col - 1 },
+        { row: tile.row, col: tile.col + 1 },
+      ];
+
+      for (const next of neighbors) {
+        if (!this.isWalkableTile(next.row, next.col)) continue;
+
+        const idx = next.row * MAP_TILE_COUNT + next.col;
+        if (mask[idx] === 1) continue;
+
+        mask[idx] = 1;
+        queue.push(next);
+      }
+    }
+
+    return mask;
+  }
+
+  findFreeWorldSpot(minDistanceFromPlayer = 2.8) {
+    for (let attempt = 0; attempt < 90; attempt++) {
+      const col = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
+      const row = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
+      if (!this.isWalkableTile(row, col)) continue;
+
+      const x = col + 0.5;
+      const y = row + 0.5;
+
+      if (Math.hypot(x - this.player.posX, y - this.player.posY) < minDistanceFromPlayer) continue;
+      if (this.orbs.some((orb) => Math.hypot(x - orb.posX, y - orb.posY) < 1.2)) continue;
+      if (this.worldModules.some((wm) => Math.hypot(x - wm.posX, y - wm.posY) < 1.4)) continue;
+      if (this.missionBeacons.some((beacon) => !beacon.activated && Math.hypot(x - beacon.posX, y - beacon.posY) < 1.5)) continue;
+      if (this.extractionPortal && Math.hypot(x - this.extractionPortal.posX, y - this.extractionPortal.posY) < 1.8) continue;
+      if (this.punchMachine && Math.hypot(x - this.punchMachine.posX, y - this.punchMachine.posY) < 1.7) continue;
+
+      return { x, y };
+    }
+    return null;
+  }
+
+  isAegisActive() {
+    return millis() < this.activeAegisUntilMs;
+  }
+
+  isChronoActive() {
+    return millis() < this.activeChronoUntilMs;
+  }
+
+  advanceCorruption() {
+    if (this.isChronoActive()) return;
+
+    const elapsed = this.survivalSeconds();
+    if (elapsed < CORRUPTION_START_DELAY_SECONDS) return;
+
+    const timeSinceLast = elapsed - this.lastCorruptionTime;
+    if (this.lastCorruptionTime === 0) {
+      this.lastCorruptionTime = elapsed;
+      return;
+    }
+
+    if (timeSinceLast >= CORRUPTION_INTERVAL_SECONDS) {
+      this.lastCorruptionTime = elapsed;
+      this.corruptionLayer++;
+      this.applyCorruptionLayer(this.corruptionLayer);
+      this.addScreenShake(4, 300);
+    }
+  }
+
+  applyCorruptionLayer(layer) {
+    const lo = layer;
+    const hi = MAP_TILE_COUNT - 1 - layer;
+    if (lo >= hi) {
+      this.triggerGameOver("The corruption consumed the entire arena.");
+      return;
+    }
+
+    const queued = [];
+    const seen = new Set();
+    const enqueue = (row, col) => {
+      const key = `${row}:${col}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      queued.push({ row, col });
+    };
+
+    for (let col = lo; col <= hi; col++) {
+      enqueue(lo, col);
+      enqueue(hi, col);
+    }
+    for (let row = lo; row <= hi; row++) {
+      enqueue(row, lo);
+      enqueue(row, hi);
+    }
+
+    for (let i = queued.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = queued[i];
+      queued[i] = queued[j];
+      queued[j] = tmp;
+    }
+
+    this.pendingCorruptionTiles.push(...queued);
+  }
+
+  applyPendingCorruptionStep() {
+    if (this.pendingCorruptionTiles.length === 0) return;
+
+    const count = Math.min(CORRUPTION_TILES_PER_FRAME, this.pendingCorruptionTiles.length);
+    for (let i = 0; i < count; i++) {
+      const tile = this.pendingCorruptionTiles.pop();
+      if (!tile) break;
+
+      const row = tile.row;
+      const col = tile.col;
+      if (row <= 0 || row >= MAP_TILE_COUNT - 1 || col <= 0 || col >= MAP_TILE_COUNT - 1) continue;
+      if (worldTileMap[row][col] === 0) {
+        worldTileMap[row][col] = 6;
+      }
+    }
+  }
+
+  handleMissionCollisions() {
+    for (const beacon of this.missionBeacons) {
+      if (beacon.activated) continue;
+
+      const dx = this.player.posX - beacon.posX;
+      const dy = this.player.posY - beacon.posY;
+      const distSq = dx * dx + dy * dy;
+      const combinedR = this.player.radius + beacon.radius;
+      if (distSq > combinedR * combinedR) continue;
+
+      beacon.activated = true;
+      this.beaconsActivated += 1;
+      this.score += MISSION_BEACON_SCORE_BONUS;
+      this.recoverAmmo(MISSION_BEACON_AMMO_RECOVERY, "Balise synchronisée", [120, 245, 210]);
+      this.spawnCollectParticles(beacon.posX, beacon.posY, [120, 245, 210]);
+      this.addScreenShake(2.4, 180);
+
+      const totalBeacons = this.missionBeacons.length;
+      if (this.beaconsActivated < totalBeacons) {
+        this.pushHudToast(`Balise ${this.beaconsActivated}/${totalBeacons} activée`, [135, 250, 220]);
+      } else {
+        this.score += EXTRACTION_PORTAL_SCORE_BONUS;
+        this.spawnExtractionPortal();
+      }
+    }
+
+    if (!this.extractionPortal) return;
+
+    const dx = this.player.posX - this.extractionPortal.posX;
+    const dy = this.player.posY - this.extractionPortal.posY;
+    const distSq = dx * dx + dy * dy;
+    const combinedR = this.player.radius + this.extractionPortal.radius;
+    if (distSq <= combinedR * combinedR) {
+      this.triggerVictory("Toutes les balises sont sécurisées. Extraction réussie.");
+    }
+  }
+
+  updateParticles(dt) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      this.particles[i].update(dt);
+      if (this.particles[i].isDead()) this.particles.splice(i, 1);
+    }
+  }
+
+  spawnCollectParticles(wx, wy, col) {
+    for (let i = 0; i < 10; i++) {
+      this.particles.push(new Particle(wx, wy, col));
+    }
+  }
+
+  addScreenShake(intensity, durationMs) {
+    this.shakeIntensity = intensity;
+    this.shakeDuration = durationMs;
+    this.shakeStartMs = millis();
+  }
+
+  currentShakeOffset() {
+    if (this.shakeIntensity === 0) return { x: 0, y: 0 };
+    const elapsed = millis() - this.shakeStartMs;
+    if (elapsed > this.shakeDuration) { this.shakeIntensity = 0; return { x: 0, y: 0 }; }
+    const factor = 1 - elapsed / this.shakeDuration;
+    return {
+      x: (Math.random() - 0.5) * 2 * this.shakeIntensity * factor,
+      y: (Math.random() - 0.5) * 2 * this.shakeIntensity * factor,
+    };
+  }
+
+  cameraScreenOffsetPx() {
+    return this.player.cameraVerticalOffsetPx();
+  }
+
+  updateMotionBlurState(dt) {
+    if (!this.motionBlurEnabled) return;
+
+    if (this.gameState !== "playing") {
+      this.motionBlurAmount = lerp(this.motionBlurAmount, 0, 0.15);
+      this.syncMotionBlurReference();
+      return;
+    }
+
+    const safeDt = Math.max(dt, 0.0001);
+    const dx = this.player.posX - this.prevPlayerPosX;
+    const dy = this.player.posY - this.prevPlayerPosY;
+    const moveSpeed = Math.hypot(dx, dy) / safeDt;
+
+    const rawAngle = this.player.angle - this.prevPlayerAngle;
+    const wrappedAngle = Math.atan2(Math.sin(rawAngle), Math.cos(rawAngle));
+    const turnSpeed = Math.abs(wrappedAngle) / safeDt;
+
+    const target = constrain(
+      moveSpeed * MOTION_BLUR_MOVE_FACTOR + turnSpeed * MOTION_BLUR_TURN_FACTOR,
+      0,
+      1
+    );
+
+    this.motionBlurAmount = lerp(this.motionBlurAmount, target, MOTION_BLUR_SMOOTHING);
+    this.syncMotionBlurReference();
+  }
 }
+
 
 window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
 window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = null;
@@ -2679,109 +3505,4 @@ function preloadZombieSkinTexture() {
       console.warn("Zombie skin texture failed to load:", zombieSkinPath);
     }
   );
-}
-
-class GameManager {
-  constructor() {
-    this.gameState = "waiting";
-    this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
-    this.orbs = [];
-    this.particles = [];
-
-    this.score = 0;
-    this.finalScore = 0;
-    this.gameOverReason = "";
-
-    this.gameStartMs = 0;
-    this.lastSpawnMs = 0;
-    this.lastCorruptionTime = 0;
-    this.corruptionLayer = 0;
-
-    this.shakeIntensity = 0;
-    this.shakeDuration = 0;
-    this.shakeStartMs = 0;
-
-    this.startOverlay = null;
-    this.gameOverOverlay = null;
-    this.finalScoreEl = null;
-    this.gameOverReasonEl = null;
-    this.restartBtn = null;
-    this.openSettingsBtn = null;
-    this.settingsOverlay = null;
-    this.closeSettingsBtn = null;
-    this.resetControlsBtn = null;
-    this.settingsStatusEl = null;
-    this.controlLegendEl = null;
-    this.bindButtons = [];
-
-    this.pendingRebindAction = null;
-    this.pendingRebindButton = null;
-    this.boundCaptureRebindKey = (event) => this.captureRebindKey(event);
-
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
-  }
-
-  initDOM() {
-    this.startOverlay = document.getElementById("start-overlay");
-    this.gameOverOverlay = document.getElementById("game-over-overlay");
-    this.finalScoreEl = document.getElementById("final-score");
-    this.gameOverReasonEl = document.getElementById("game-over-reason");
-    this.restartBtn = document.getElementById("restart-button");
-
-    if (this.restartBtn) {
-      this.restartBtn.addEventListener("click", () => this.startNewGame());
-    }
-
-    if (this.startOverlay) {
-      this.startOverlay.addEventListener("click", () => {
-        this.requestPointerLock();
-        this.startNewGame();
-      });
-    }
-  }
-
-  requestPointerLock() {
-    const cvs = document.querySelector("canvas");
-    if (cvs && cvs.requestPointerLock) cvs.requestPointerLock();
-  }
-
-  onViewportResize() {
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
-  }
-
-  startNewGame() {
-    this.closeSettingsMenu();
-    generateWorldMap();
-
-    this.gameState = "playing";
-    this.player.resetToSpawn();
-    this.orbs = [];
-    this.particles = [];
-    this.score = 0;
-    this.finalScore = 0;
-    this.gameOverReason = "";
-    this.corruptionLayer = 0;
-    this.lastCorruptionTime = 0;
-    this.gameStartMs = millis();
-    this.lastSpawnMs = millis();
-    this.shakeIntensity = 0;
-
-    for (let i = 0; i < 5; i++) this.spawnOrb();
-
-    if (this.startOverlay) this.startOverlay.style.display = "none";
-    if (this.gameOverOverlay) {
-      this.gameOverOverlay.classList.remove("visible");
-      this.gameOverOverlay.setAttribute("aria-hidden", "true");
-    }
-  }
-
-  runFrame() {
-    const dt = min(deltaTime / 1000, 0.05);
-
-    if (this.gameState === "playing") {
-      this.updateGame(dt);
-    }
-
-    this.renderFrame();
-  }
 }

@@ -1,4 +1,4 @@
-// --- Player ---
+﻿// --- Player ---
 const PLAYER_MOVE_SPEED = 3.6;    // tiles per second
 const PLAYER_ROTATE_SPEED = 0.003;  // radians per mouse-pixel
 const PLAYER_RADIUS = 0.25;   // collision cylinder radius
@@ -169,3 +169,39 @@ const MODULE_EMP_STUN_DURATION_MS = 4200;
 const MODULE_CHRONO_DURATION_MS = 8000;
 const MODULE_CHRONO_SPAWN_SLOW_FACTOR = 1.8;
 const MODULE_CHRONO_HUNTER_TIME_SCALE = 0.55;
+
+// --- Motion blur ---
+const MOTION_BLUR_ENABLED       = true;
+const MOTION_BLUR_BUFFER_SCALE  = 0.34;
+const MOTION_BLUR_MAX_ALPHA     = 74;
+const MOTION_BLUR_MOVE_FACTOR   = 0.08;
+const MOTION_BLUR_TURN_FACTOR   = 0.23;
+const MOTION_BLUR_SMOOTHING     = 0.22;
+const MOTION_BLUR_MIN_TRIGGER   = 0.04;
+const MOTION_BLUR_CAPTURE_STEP  = 2;
+
+// --- Sprite zombie (animation) ---
+const ZOMBIE_SPRITE_SHEET_FRAME_COUNT = 6;
+const ZOMBIE_SPRITE_SHEET_FPS = 10;
+const ZOMBIE_SPRITESHEET_PATH = "assets/textures/zombie.png";
+const ZOMBIE_USE_EXTERNAL_SPRITESHEET = true;
+const ZOMBIE_HEAD_TURN_PIXELS = 2;
+
+// --- Mode vagues : délais ---
+const WAVE_START_DELAY_MS    = 2600;
+const WAVE_BREAK_DURATION_MS = 8200;
+
+// --- Corruption progressive ---
+const CORRUPTION_TILES_PER_FRAME = 22;
+
+// --- Mission beacons & extraction portal ---
+const MISSION_BEACON_COUNT          = 4;
+const MISSION_BEACON_RADIUS         = 0.32;
+const MISSION_BEACON_SCORE_BONUS    = 420;
+const MISSION_BEACON_AMMO_RECOVERY  = 2;
+const EXTRACTION_PORTAL_RADIUS      = 0.58;
+const EXTRACTION_PORTAL_SCORE_BONUS = 1800;
+
+// --- Inventaire / toast ---
+const INVENTORY_SLOT_MAX    = 9;
+const HUD_TOAST_DURATION_MS = 1800;
