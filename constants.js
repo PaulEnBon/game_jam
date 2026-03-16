@@ -118,18 +118,54 @@ const ORB_SAFE_AMMO_RECOVERY     = 1;
 const ORB_WARNING_AMMO_RECOVERY  = 2;
 const WORLD_MODULE_AMMO_RECOVERY = 2;
 
-// --- Gameplay modules: values (AEGIS / EMP / CHRONO) ---
-const MODULE_AEGIS_DURATION_MS      = 9000;
-const MODULE_AEGIS_REPEL_RADIUS     = 3.4;
-const MODULE_AEGIS_REPEL_FORCE      = 3.2;
-const MODULE_EMP_STUN_RADIUS        = 5.2;
-const MODULE_EMP_STUN_DURATION_MS   = 4200;
-const MODULE_CHRONO_DURATION_MS       = 8000;
-const MODULE_CHRONO_SPAWN_SLOW_FACTOR = 1.8;
-const MODULE_CHRONO_HUNTER_TIME_SCALE = 0.55;
-
 // --- Lava dodge / teleport fallback ---
 const LAVA_AVOID_DISTANCE_TILES = 2.1;
 const LAVA_AVOID_PUSH_FORCE     = 2.8;
 const LAVA_CENTER_PULL_FORCE    = 0.9;
 const HUNTER_LAVA_TELEPORT_MIN_DISTANCE = 6.5;
+
+let SCREEN_WIDTH = window.innerWidth;
+let SCREEN_HEIGHT = window.innerHeight;
+
+const MAP_TILE_COUNT = 24;
+const TILE_SIZE = 1;
+const MAP_SIZE = MAP_TILE_COUNT * TILE_SIZE;
+
+const TEXTURE_SIZE = 32;
+
+const FIELD_OF_VIEW_RADIANS = Math.PI / 3;
+let RAY_COUNT = SCREEN_WIDTH;
+const MAX_RAY_DISTANCE = 30;
+const WALL_HEIGHT_PROJECTION_FACTOR = 1.0;
+
+function updateViewportSize() {
+  SCREEN_WIDTH = window.innerWidth;
+  SCREEN_HEIGHT = window.innerHeight;
+  RAY_COUNT = SCREEN_WIDTH;
+}
+
+const FOG_DENSITY = 0.55;
+const AMBIENT_LIGHT_MINIMUM = 0.22;
+const SIDE_SHADE_FACTOR = 0.85;
+
+// --- World Modules (innovative interactives) ---
+const WORLD_MODULE_RADIUS = 0.34;
+const WORLD_MODULE_LIFETIME_MS = 36000;
+const WORLD_MODULE_START_COUNT = 3;
+const WORLD_MODULE_MAX_COUNT = 5;
+const WORLD_MODULE_SPAWN_INTERVAL_MS = 14000;
+const WORLD_MODULE_ACTIVATE_BONUS = 320;
+
+// AEGIS module - temporary hunter repulsion around the player
+const MODULE_AEGIS_DURATION_MS = 9000;
+const MODULE_AEGIS_REPEL_RADIUS = 3.4;
+const MODULE_AEGIS_REPEL_FORCE = 3.2;
+
+// EMP module - stuns nearby hunters
+const MODULE_EMP_STUN_RADIUS = 5.2;
+const MODULE_EMP_STUN_DURATION_MS = 4200;
+
+// CHRONO module - slows world pressure for a short time
+const MODULE_CHRONO_DURATION_MS = 8000;
+const MODULE_CHRONO_SPAWN_SLOW_FACTOR = 1.8;
+const MODULE_CHRONO_HUNTER_TIME_SCALE = 0.55;

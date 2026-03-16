@@ -2680,3 +2680,108 @@ function preloadZombieSkinTexture() {
     }
   );
 }
+
+class GameManager {
+  constructor() {
+    this.gameState = "waiting";
+    this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
+    this.orbs = [];
+    this.particles = [];
+
+    this.score = 0;
+    this.finalScore = 0;
+    this.gameOverReason = "";
+
+    this.gameStartMs = 0;
+    this.lastSpawnMs = 0;
+    this.lastCorruptionTime = 0;
+    this.corruptionLayer = 0;
+
+    this.shakeIntensity = 0;
+    this.shakeDuration = 0;
+    this.shakeStartMs = 0;
+
+    this.startOverlay = null;
+    this.gameOverOverlay = null;
+    this.finalScoreEl = null;
+    this.gameOverReasonEl = null;
+    this.restartBtn = null;
+    this.openSettingsBtn = null;
+    this.settingsOverlay = null;
+    this.closeSettingsBtn = null;
+    this.resetControlsBtn = null;
+    this.settingsStatusEl = null;
+    this.controlLegendEl = null;
+    this.bindButtons = [];
+
+    this.pendingRebindAction = null;
+    this.pendingRebindButton = null;
+    this.boundCaptureRebindKey = (event) => this.captureRebindKey(event);
+
+    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+  }
+
+  initDOM() {
+    this.startOverlay = document.getElementById("start-overlay");
+    this.gameOverOverlay = document.getElementById("game-over-overlay");
+    this.finalScoreEl = document.getElementById("final-score");
+    this.gameOverReasonEl = document.getElementById("game-over-reason");
+    this.restartBtn = document.getElementById("restart-button");
+
+    if (this.restartBtn) {
+      this.restartBtn.addEventListener("click", () => this.startNewGame());
+    }
+
+    if (this.startOverlay) {
+      this.startOverlay.addEventListener("click", () => {
+        this.requestPointerLock();
+        this.startNewGame();
+      });
+    }
+  }
+
+  requestPointerLock() {
+    const cvs = document.querySelector("canvas");
+    if (cvs && cvs.requestPointerLock) cvs.requestPointerLock();
+  }
+
+  onViewportResize() {
+    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+  }
+
+  startNewGame() {
+    this.closeSettingsMenu();
+    generateWorldMap();
+
+    this.gameState = "playing";
+    this.player.resetToSpawn();
+    this.orbs = [];
+    this.particles = [];
+    this.score = 0;
+    this.finalScore = 0;
+    this.gameOverReason = "";
+    this.corruptionLayer = 0;
+    this.lastCorruptionTime = 0;
+    this.gameStartMs = millis();
+    this.lastSpawnMs = millis();
+    this.shakeIntensity = 0;
+
+    for (let i = 0; i < 5; i++) this.spawnOrb();
+
+    if (this.startOverlay) this.startOverlay.style.display = "none";
+    if (this.gameOverOverlay) {
+      this.gameOverOverlay.classList.remove("visible");
+      this.gameOverOverlay.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  runFrame() {
+    const dt = min(deltaTime / 1000, 0.05);
+
+    if (this.gameState === "playing") {
+      this.updateGame(dt);
+    }
+
+    this.renderFrame();
+  }
+}
