@@ -34,8 +34,8 @@ const CORRUPTION_INTERVAL_SECONDS = 6;
 const SURVIVAL_POINTS_PER_SECOND = 30;
 const ORB_COLLECT_BONUS = 500;
 
-// --- Physique joueur (saut / regard vertical) ---
-const PLAYER_PITCH_SPEED  = 0.0022; // sensibilité verticale
+// --- Player physics (jump / vertical look) ---
+const PLAYER_PITCH_SPEED  = 0.0022; // vertical sensitivity
 const PLAYER_MAX_PITCH    = 0.78;   // ~45°
 const PLAYER_JUMP_VELOCITY = 5.2;
 const PLAYER_GRAVITY       = 14.5;
@@ -44,7 +44,7 @@ const PLAYER_GRAVITY       = 14.5;
 const CAMERA_PITCH_PIXEL_RATIO = 0.40;
 const CAMERA_JUMP_PIXEL_RATIO  = 0.22;
 
-// --- Arme ---
+// --- Weapon ---
 const WEAPON_START_AMMO        = 12;
 const WEAPON_MAX_AMMO          = 24;
 const WEAPON_FIRE_COOLDOWN_MS  = 170;
@@ -75,13 +75,13 @@ const KILL_STREAK_MAX_MULTIPLIER  = 2.4;
 const KILL_STREAK_AMMO_BONUS_EVERY = 4;
 const KILL_STREAK_AMMO_BONUS       = 1;
 
-// --- Hunter AI : comportement zombie ---
+// --- Hunter AI: zombie behavior ---
 const ZOMBIE_ATTACK_DISTANCE = 0.95;
 const ZOMBIE_ANIM_SPEED_MIN = 0.7;
 const ZOMBIE_ANIM_SPEED_MAX = 2.2;
 const ZOMBIE_SIDE_TURN_THRESHOLD = 0.35;
 
-// --- Mode vagues (COD Zombies) ---
+// --- Wave mode (COD Zombies) ---
 const WAVE_BASE_ENEMY_COUNT         = 6;
 const WAVE_ENEMY_GROWTH_LINEAR      = 3;
 const WAVE_MAX_SIMULTANEOUS_BASE    = 4;
@@ -102,7 +102,7 @@ const PUNCH_MACHINE_UNLOCK_WAVE     = 2;
 const PUNCH_MACHINE_COST            = 1200;
 const PUNCH_MACHINE_COOLDOWN_MS     = 14000;
 
-// --- Drops de mobs ---
+// --- Mob drops ---
 const MOB_DROP_RADIUS         = 0.24;
 const MOB_DROP_LIFETIME_MS    = 22000;
 const MOB_DROP_AMMO_GAIN      = 6;
@@ -113,12 +113,12 @@ const MOB_DROP_CRATE_CHANCE   = 0.12;
 const MOB_DROP_ROUNDS_GAIN    = 3;
 const MOB_DROP_CRATE_BONUS_AMMO = 2;
 
-// --- Récupération d'ammo par source ---
+// --- Ammo recovery by source ---
 const ORB_SAFE_AMMO_RECOVERY     = 1;
 const ORB_WARNING_AMMO_RECOVERY  = 2;
 const WORLD_MODULE_AMMO_RECOVERY = 2;
 
-// --- Modules de jeu : valeurs (AEGIS / EMP / CHRONO) ---
+// --- Gameplay modules: values (AEGIS / EMP / CHRONO) ---
 const MODULE_AEGIS_DURATION_MS      = 9000;
 const MODULE_AEGIS_REPEL_RADIUS     = 3.4;
 const MODULE_AEGIS_REPEL_FORCE      = 3.2;
@@ -128,7 +128,7 @@ const MODULE_CHRONO_DURATION_MS       = 8000;
 const MODULE_CHRONO_SPAWN_SLOW_FACTOR = 1.8;
 const MODULE_CHRONO_HUNTER_TIME_SCALE = 0.55;
 
-// --- Esquive / téléportation lave ---
+// --- Lava dodge / teleport fallback ---
 const LAVA_AVOID_DISTANCE_TILES = 2.1;
 const LAVA_AVOID_PUSH_FORCE     = 2.8;
 const LAVA_CENTER_PULL_FORCE    = 0.9;

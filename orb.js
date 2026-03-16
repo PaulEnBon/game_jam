@@ -116,7 +116,7 @@ class Orb {
     const dy = player.posY - this.posY;
     const dist = Math.hypot(dx, dy);
 
-    // Si le joueur s'éloigne assez, retour en patrouille (sauf noLoseAggro)
+    // If the player gets far enough, return to patrol (unless noLoseAggro is enabled)
     if (!this.noLoseAggro && dist > HUNTER_LOSE_RANGE) {
       this.state = "patrol";
       this.pickNewWaypoint();
@@ -156,7 +156,7 @@ class Orb {
       const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
 
       if (hasLOS) {
-        // Léger décalage latéral pour éviter la fuite en tunnel.
+        // Small lateral offset to avoid tunnel-style kiting.
         const invDist = 1 / Math.max(0.001, dist);
         const perpX = -dy * invDist;
         const perpY =  dx * invDist;
@@ -166,7 +166,7 @@ class Orb {
         this.nextPathX = null;
         this.nextPathY = null;
       } else {
-        // Pathfinding BFS quand pas de LOS
+        // BFS pathfinding when line-of-sight is blocked
         if (
           this.nextPathX === null ||
           this.nextPathY === null ||
@@ -201,7 +201,7 @@ class Orb {
     }
   }
 
-// ─── NOUVELLE méthode : hasLineOfSightTo() ────────────────────────────────────
+// --- New method: hasLineOfSightTo() ---
   hasLineOfSightTo(targetX, targetY) {
     const dx = targetX - this.posX;
     const dy = targetY - this.posY;
@@ -223,7 +223,7 @@ class Orb {
     return true;
   }
 
-// ─── NOUVELLE méthode : findPathNextStepTo() — BFS pathfinding ───────────────
+// --- New method: findPathNextStepTo() — BFS pathfinding ---
   findPathNextStepTo(targetX, targetY) {
     const startCol = Math.floor(this.posX);
     const startRow = Math.floor(this.posY);
@@ -289,7 +289,7 @@ class Orb {
 
     if (!found) return null;
 
-    // Remonter le chemin jusqu'au premier pas depuis start
+    // Backtrack path to the first step from start
     let stepIdx = goalIdx;
     while (parent[stepIdx] !== -1 && parent[stepIdx] !== startIdx) {
       stepIdx = parent[stepIdx];
@@ -301,7 +301,7 @@ class Orb {
     return { x: stepCol + 0.5, y: stepRow + 0.5 };
   }
 
-// ─── NOUVELLE méthode : moveWithCollision() — wall slide ─────────────────────
+// --- New method: moveWithCollision() — wall slide ---
   moveWithCollision(moveX, moveY) {
     let moved = false;
 
@@ -312,7 +312,7 @@ class Orb {
 
     if (moved) return true;
 
-    // Side-step si bloqué frontalement
+    // Side-step when blocked head-on
     const intentLength = Math.hypot(moveX, moveY);
     if (intentLength <= 0.0001) return false;
 
@@ -341,7 +341,7 @@ class Orb {
     return false;
   }
 
-// ─── NOUVELLE méthode : tryUnstuckHop() — récupération si bloqué ─────────────
+// --- New method: tryUnstuckHop() — recovery when stuck ---
   tryUnstuckHop() {
     const now = millis();
     if (now - this.lastUnstuckMs < 850) return false;
@@ -354,7 +354,7 @@ class Orb {
       { dx: 0.24, dy: -0.24 }, { dx: -0.24, dy: -0.24 },
     ];
 
-    // Mélange aléatoire (Fisher-Yates)
+    // Random shuffle (Fisher-Yates)
     for (let i = offsets.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       const tmp = offsets[i]; offsets[i] = offsets[j]; offsets[j] = tmp;

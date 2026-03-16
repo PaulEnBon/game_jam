@@ -1567,4 +1567,1116 @@ class GameManager {
       ellipse(cx, cy, maxR * 2 * (0.65 + frac * 0.35), maxR * 2 * (0.65 + frac * 0.35));
     }
   }
+
+// --- In constructor() ---
+//   this.zombieSpriteCache    = this.createZombieSpriteCache();
+//   this.collectOrbSpriteCache = this.createCollectOrbSpriteCache();
+//   this.motionBlurEnabled    = MOTION_BLUR_ENABLED;
+//   this.motionBlurBuffer     = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
+//   this.motionBlurAmount     = 0;
+//   this.motionBlurFrameCounter = 0;
+//   this.prevPlayerPosX       = this.player.posX;
+//   this.prevPlayerPosY       = this.player.posY;
+//   this.prevPlayerAngle      = this.player.angle;
+
+// --- Zombie sprite system ---
+
+  createZombieSpriteCache() {
+    const sheet = ZOMBIE_USE_EXTERNAL_SPRITESHEET ? this.getZombieSpriteSheetImage() : null;
+    if (sheet) {
+      const frameCount = Math.max(1, Math.floor(ZOMBIE_SPRITE_SHEET_FRAME_COUNT));
+      const frameWidth = Math.max(1, Math.floor(sheet.width / frameCount));
+      const frameHeight = Math.max(1, sheet.height);
+      return {
+        mode: "sheet",
+        width: frameWidth,
+        height: frameHeight,
+        frameCount,
+        fps: Math.max(1, ZOMBIE_SPRITE_SHEET_FPS),
+        patrolFrontFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
+        patrolLeftFrames:   this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
+        patrolRightFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
+        chaseFrontFrames:   this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
+        chaseLeftFrames:    this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
+        chaseRightFrames:   this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
+        attackFrontFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
+        attackLeftFrames:   this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
+        attackRightFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
+        chargeFrontFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
+        chargeLeftFrames:   this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
+        chargeRightFrames:  this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
+      };
+    }
+
+    const width = 40;
+    const height = 58;
+    const patrol = this.buildZombieSpriteVariant(width, height, "patrol");
+    const chase   = this.buildZombieSpriteVariant(width, height, "chase");
+    const attack  = this.buildZombieSpriteVariant(width, height, "attack");
+    const charge  = this.buildZombieSpriteVariant(width, height, "charge");
+    const frameCount = Math.max(1, Math.floor(ZOMBIE_SPRITE_SHEET_FRAME_COUNT));
+    const skin = this.getZombieSkinImage();
+
+    const build = (variant, dir) =>
+      skin
+        ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, variant, dir)
+        : this.buildZombiePseudoAnimationFrames(
+            variant === "patrol" ? patrol : variant === "chase" ? chase : variant === "attack" ? attack : charge,
+            width, height, frameCount, variant, dir
+          );
+
+    return {
+      mode: "generated",
+      width, height,
+      fps: Math.max(1, ZOMBIE_SPRITE_SHEET_FPS),
+      patrol, chase, attack, charge,
+      patrolFrontFrames:  build("patrol",  0),
+      patrolLeftFrames:   build("patrol", -1),
+      patrolRightFrames:  build("patrol",  1),
+      chaseFrontFrames:   build("chase",   0),
+      chaseLeftFrames:    build("chase",  -1),
+      chaseRightFrames:   build("chase",   1),
+      attackFrontFrames:  build("attack",  0),
+      attackLeftFrames:   build("attack", -1),
+      attackRightFrames:  build("attack",  1),
+      chargeFrontFrames:  build("charge",  0),
+      chargeLeftFrames:   build("charge", -1),
+      chargeRightFrames:  build("charge",  1),
+    };
+  }
+
+  getZombieSpriteSheetImage() {
+    if (typeof window === "undefined") return null;
+    const sheet = window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE;
+    if (!sheet || sheet.width <= 0 || sheet.height <= 0) return null;
+    const frameCount = Math.max(1, Math.floor(ZOMBIE_SPRITE_SHEET_FRAME_COUNT));
+    const frameWidth = Math.floor(sheet.width / frameCount);
+    const looksLikeHorizontalStrip = sheet.width > sheet.height;
+    const hasUsableFrameSize = frameWidth >= 8 && sheet.height >= 8;
+    if (!looksLikeHorizontalStrip || !hasUsableFrameSize) return null;
+    return sheet;
+  }
+
+  getZombieSkinImage() {
+    if (typeof window === "undefined") return null;
+    const skin = window.PRELOADED_ZOMBIE_SKIN_IMAGE;
+    if (!skin || skin.width <= 0 || skin.height <= 0) return null;
+    return skin;
+  }
+
+  hasOpaquePixels(pixelData) {
+    for (let i = 3; i < pixelData.length; i += 4) {
+      if (pixelData[i] > 0) return true;
+    }
+    return false;
+  }
+
+  buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, variant) {
+    try {
+      sheet.loadPixels();
+      if (!sheet.pixels || sheet.pixels.length === 0) return [];
+      const frames = [];
+      for (let frame = 0; frame < frameCount; frame++) {
+        const data = new Uint8ClampedArray(frameWidth * frameHeight * 4);
+        const frameStartX = frame * frameWidth;
+        for (let y = 0; y < frameHeight; y++) {
+          for (let x = 0; x < frameWidth; x++) {
+            const srcX = constrain(frameStartX + x, 0, sheet.width - 1);
+            const srcY = constrain(y, 0, sheet.height - 1);
+            const srcIdx = 4 * (srcY * sheet.width + srcX);
+            const dstIdx = 4 * (y * frameWidth + x);
+            const alpha = sheet.pixels[srcIdx + 3];
+            if (alpha < 10) { data[dstIdx + 3] = 0; continue; }
+            const [r, g, b] = this.applyZombieVariantTint(
+              sheet.pixels[srcIdx], sheet.pixels[srcIdx + 1], sheet.pixels[srcIdx + 2], variant, 1
+            );
+            data[dstIdx] = r; data[dstIdx + 1] = g; data[dstIdx + 2] = b; data[dstIdx + 3] = alpha;
+          }
+        }
+        if (this.hasOpaquePixels(data)) frames.push(data);
+      }
+      return frames;
+    } catch (err) { console.warn("Failed to build zombie spritesheet frames:", err); return []; }
+  }
+
+  buildZombieSkinAnimatedFrames(width, height, frameCount, variant, headYawDir = 0) {
+    const skin = this.getZombieSkinImage();
+    if (!skin) return [];
+    try {
+      skin.loadPixels();
+      if (!skin.pixels || skin.pixels.length === 0) return [];
+      const frames = [];
+      const faceMap = this.getZombieMinecraftFaceMap();
+      const useLegacyLeftLimbUV = skin.height < 64;
+      const leftArmFaces = useLegacyLeftLimbUV ? faceMap.rightArm : faceMap.leftArm;
+      const leftLegFaces = useLegacyLeftLimbUV ? faceMap.rightLeg : faceMap.leftLeg;
+
+      for (let frame = 0; frame < frameCount; frame++) {
+        const data = new Uint8ClampedArray(width * height * 4);
+        const phase = (frame / frameCount) * TWO_PI;
+        const stride = variant === "charge" ? 3 : (variant === "chase" ? 2 : (variant === "attack" ? 2 : 1));
+        const armSwing = Math.round(Math.sin(phase) * stride);
+        const legSwing = -armSwing;
+        const bodyBob = Math.round(Math.abs(Math.sin(phase)) * (variant === "charge" ? 2 : 1));
+        const attackLunge = variant === "attack" ? Math.max(0, Math.round(Math.sin(phase) * 2)) : 0;
+        const headYawPx  = Math.round(headYawDir * ZOMBIE_HEAD_TURN_PIXELS);
+        const torsoYawPx = Math.round(headYawDir * (ZOMBIE_HEAD_TURN_PIXELS * 0.5));
+        const topSkew = 0.36;
+
+        this.paintZombieCuboid(data, width, height, skin, faceMap.head,
+          { x: 8 + attackLunge + headYawPx, y: 2 + bodyBob, width: 11, height: 11, depth: 3, topHeight: 3, topSkew },
+          { front: 1, side: 0.78, top: 1.08 }, variant);
+        this.paintZombieCuboid(data, width, height, skin, faceMap.body,
+          { x: 8 + attackLunge + torsoYawPx, y: 14 + bodyBob, width: 10, height: 13, depth: 3, topHeight: 2, topSkew },
+          { front: 0.95, side: 0.74, top: 1.02 }, variant);
+        this.paintZombieCuboid(data, width, height, skin, faceMap.rightArm,
+          { x: 19 + armSwing + attackLunge + torsoYawPx, y: 14 + bodyBob, width: 4, height: 13, depth: 2, topHeight: 2, topSkew: 0.3 },
+          { front: 0.92, side: 0.68, top: 1.0 }, variant);
+        this.paintZombieCuboid(data, width, height, skin, leftArmFaces,
+          { x: 4 - armSwing + attackLunge + torsoYawPx, y: 14 + bodyBob, width: 4, height: 13, depth: 2, topHeight: 2, topSkew: 0.3 },
+          { front: 0.92, side: 0.68, top: 1.0 }, variant);
+        this.paintZombieCuboid(data, width, height, skin, faceMap.rightLeg,
+          { x: 10 + legSwing, y: 25 + bodyBob, width: 4, height: 16, depth: 2, topHeight: 2, topSkew: 0.28 },
+          { front: 0.9, side: 0.66, top: 0.98 }, variant);
+        this.paintZombieCuboid(data, width, height, skin, leftLegFaces,
+          { x: 6 - legSwing, y: 25 + bodyBob, width: 4, height: 16, depth: 2, topHeight: 2, topSkew: 0.28 },
+          { front: 0.9, side: 0.66, top: 0.98 }, variant);
+
+        if (this.hasOpaquePixels(data)) frames.push(data);
+      }
+      return frames;
+    } catch (err) { console.warn("Failed to build zombie skin animated frames:", err); return []; }
+  }
+
+  copyZombieRegion(src, dst, width, height, x0, y0, x1, y1, offsetX, offsetY) {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const dstX = x + offsetX;
+        const dstY = y + offsetY;
+        if (dstX < 0 || dstX >= width || dstY < 0 || dstY >= height) continue;
+        const srcIdx = 4 * (y * width + x);
+        const alpha  = src[srcIdx + 3];
+        if (alpha <= 0) continue;
+        const dstIdx = 4 * (dstY * width + dstX);
+        dst[dstIdx] = src[srcIdx]; dst[dstIdx + 1] = src[srcIdx + 1];
+        dst[dstIdx + 2] = src[srcIdx + 2]; dst[dstIdx + 3] = alpha;
+      }
+    }
+  }
+
+  buildZombiePseudoAnimationFrames(baseTexture, width, height, frameCount, variant, headYawDir = 0) {
+    if (!baseTexture || !this.hasOpaquePixels(baseTexture)) return [];
+    const frames = [];
+    for (let frame = 0; frame < frameCount; frame++) {
+      const data = new Uint8ClampedArray(width * height * 4);
+      const phase = (frame / frameCount) * TWO_PI;
+      const stride = variant === "charge" ? 3 : (variant === "chase" ? 2 : (variant === "attack" ? 2 : 1));
+      const armSwing = Math.round(Math.sin(phase) * stride);
+      const legSwing = -armSwing;
+      const bob      = Math.round(Math.abs(Math.sin(phase)) * (variant === "charge" ? 2 : 1));
+      const torsoLean  = variant === "charge" ? 1 : 0;
+      const headYawPx  = Math.round(headYawDir * ZOMBIE_HEAD_TURN_PIXELS);
+      const legLiftL   = Math.max(0, Math.round(Math.sin(phase) * 2));
+      const legLiftR   = Math.max(0, Math.round(-Math.sin(phase) * 2));
+      const armLiftL   = Math.max(0, Math.round(-Math.sin(phase) * 1));
+      const armLiftR   = Math.max(0, Math.round(Math.sin(phase) * 1));
+      const attackLunge    = variant === "attack" ? Math.max(0, Math.round(Math.sin(phase) * 2)) : 0;
+      const attackArmReachL = variant === "attack" ? Math.max(0, Math.round(Math.sin(phase) * 3)) : 0;
+      const attackArmReachR = variant === "attack" ? Math.max(0, Math.round(-Math.sin(phase) * 3)) : 0;
+
+      this.copyZombieRegion(baseTexture, data, width, height, 14, 4,  24, 14, torsoLean + attackLunge + headYawPx, bob);
+      this.copyZombieRegion(baseTexture, data, width, height, 14, 15, 24, 30, torsoLean + attackLunge, bob);
+      this.copyZombieRegion(baseTexture, data, width, height, 9,  17, 13, 30, -armSwing - attackArmReachL, bob - armLiftL);
+      this.copyZombieRegion(baseTexture, data, width, height, 25, 17, 29, 30,  armSwing + attackArmReachR, bob - armLiftR);
+      this.copyZombieRegion(baseTexture, data, width, height, 12, 31, 16, 49,  legSwing, bob - legLiftL);
+      this.copyZombieRegion(baseTexture, data, width, height, 18, 31, 22, 49, -legSwing, bob - legLiftR);
+      frames.push(data);
+    }
+    return frames;
+  }
+
+  buildZombieSkinSpriteVariant(width, height, variant) {
+    const skin = this.getZombieSkinImage();
+    if (!skin) return null;
+    try {
+      skin.loadPixels();
+      if (!skin.pixels || skin.pixels.length === 0) return null;
+      const data = new Uint8ClampedArray(width * height * 4);
+      const faceMap = this.getZombieMinecraftFaceMap();
+      const useLegacyLeftLimbUV = skin.height < 64;
+      const leftArmFaces = useLegacyLeftLimbUV ? faceMap.rightArm : faceMap.leftArm;
+      const leftLegFaces = useLegacyLeftLimbUV ? faceMap.rightLeg : faceMap.leftLeg;
+      const topSkew = 0.36;
+
+      this.paintZombieCuboid(data, width, height, skin, faceMap.head,
+        { x: 8, y: 2, width: 11, height: 11, depth: 3, topHeight: 3, topSkew },
+        { front: 1, side: 0.78, top: 1.08 }, variant);
+      this.paintZombieCuboid(data, width, height, skin, faceMap.body,
+        { x: 8, y: 14, width: 10, height: 13, depth: 3, topHeight: 2, topSkew },
+        { front: 0.95, side: 0.74, top: 1.02 }, variant);
+      this.paintZombieCuboid(data, width, height, skin, faceMap.rightArm,
+        { x: 19, y: 14, width: 4, height: 13, depth: 2, topHeight: 2, topSkew: 0.3 },
+        { front: 0.92, side: 0.68, top: 1.0 }, variant);
+      this.paintZombieCuboid(data, width, height, skin, leftArmFaces,
+        { x: 4, y: 14, width: 4, height: 13, depth: 2, topHeight: 2, topSkew: 0.3 },
+        { front: 0.92, side: 0.68, top: 1.0 }, variant);
+      this.paintZombieCuboid(data, width, height, skin, faceMap.rightLeg,
+        { x: 10, y: 25, width: 4, height: 16, depth: 2, topHeight: 2, topSkew: 0.28 },
+        { front: 0.9, side: 0.66, top: 0.98 }, variant);
+      this.paintZombieCuboid(data, width, height, skin, leftLegFaces,
+        { x: 6, y: 25, width: 4, height: 16, depth: 2, topHeight: 2, topSkew: 0.28 },
+        { front: 0.9, side: 0.66, top: 0.98 }, variant);
+
+      if (!this.hasOpaquePixels(data)) return null;
+      return data;
+    } catch (err) { console.warn("Failed to build zombie skin sprite variant:", err); return null; }
+  }
+
+  getZombieMinecraftFaceMap() {
+    return {
+      head:     { top: { x: 8,  y: 0,  w: 8, h: 8 },  front: { x: 8,  y: 8,  w: 8, h: 8 },  right: { x: 0,  y: 8,  w: 8, h: 8 },  left: { x: 16, y: 8,  w: 8, h: 8  } },
+      body:     { top: { x: 20, y: 16, w: 8, h: 4 },  front: { x: 20, y: 20, w: 8, h: 12 }, right: { x: 16, y: 20, w: 4, h: 12 }, left: { x: 28, y: 20, w: 4, h: 12 } },
+      rightArm: { top: { x: 44, y: 16, w: 4, h: 4 },  front: { x: 44, y: 20, w: 4, h: 12 }, right: { x: 40, y: 20, w: 4, h: 12 }, left: { x: 48, y: 20, w: 4, h: 12 } },
+      leftArm:  { top: { x: 36, y: 48, w: 4, h: 4 },  front: { x: 36, y: 52, w: 4, h: 12 }, right: { x: 32, y: 52, w: 4, h: 12 }, left: { x: 40, y: 52, w: 4, h: 12 } },
+      rightLeg: { top: { x: 4,  y: 16, w: 4, h: 4 },  front: { x: 4,  y: 20, w: 4, h: 12 }, right: { x: 0,  y: 20, w: 4, h: 12 }, left: { x: 8,  y: 20, w: 4, h: 12 } },
+      leftLeg:  { top: { x: 20, y: 48, w: 4, h: 4 },  front: { x: 20, y: 52, w: 4, h: 12 }, right: { x: 16, y: 52, w: 4, h: 12 }, left: { x: 24, y: 52, w: 4, h: 12 } },
+    };
+  }
+
+  writeSkinPixelToSprite(data, canvasW, canvasH, skin, skinX, skinY, spriteX, spriteY, shade, variant) {
+    if (!skin || !skin.pixels || skin.pixels.length === 0) return;
+    if (spriteX < 0 || spriteX >= canvasW || spriteY < 0 || spriteY >= canvasH) return;
+    const clampedSkinX = constrain(Math.floor(skinX), 0, skin.width - 1);
+    const clampedSkinY = constrain(Math.floor(skinY), 0, skin.height - 1);
+    const srcIdx = 4 * (clampedSkinY * skin.width + clampedSkinX);
+    const alpha = skin.pixels[srcIdx + 3];
+    if (alpha < 12) return;
+    const [r, g, b] = this.applyZombieVariantTint(
+      skin.pixels[srcIdx], skin.pixels[srcIdx + 1], skin.pixels[srcIdx + 2], variant, shade
+    );
+    const dstIdx = 4 * (spriteY * canvasW + spriteX);
+    data[dstIdx] = r; data[dstIdx + 1] = g; data[dstIdx + 2] = b; data[dstIdx + 3] = 255;
+  }
+
+  paintZombieFrontFace(data, canvasW, canvasH, skin, uv, dstX, dstY, dstW, dstH, shade, variant) {
+    for (let ty = 0; ty < dstH; ty++) {
+      const v = uv.y + (ty / Math.max(1, dstH)) * uv.h;
+      for (let tx = 0; tx < dstW; tx++) {
+        const u = uv.x + (tx / Math.max(1, dstW)) * uv.w;
+        this.writeSkinPixelToSprite(data, canvasW, canvasH, skin, u, v, dstX + tx, dstY + ty, shade, variant);
+      }
+    }
+  }
+
+  paintZombieRightFace(data, canvasW, canvasH, skin, uv, dstX, dstY, dstH, depth, shade, variant) {
+    for (let ty = 0; ty < dstH; ty++) {
+      const v = uv.y + (ty / Math.max(1, dstH)) * uv.h;
+      for (let tx = 0; tx < depth; tx++) {
+        const u = uv.x + (tx / Math.max(1, depth)) * uv.w;
+        const yShift = Math.floor((depth - tx - 1) * 0.55);
+        this.writeSkinPixelToSprite(data, canvasW, canvasH, skin, u, v, dstX + tx, dstY + ty - yShift, shade, variant);
+      }
+    }
+  }
+
+  paintZombieLeftFace(data, canvasW, canvasH, skin, uv, dstX, dstY, dstH, depth, shade, variant) {
+    for (let ty = 0; ty < dstH; ty++) {
+      const v = uv.y + (ty / Math.max(1, dstH)) * uv.h;
+      for (let tx = 0; tx < depth; tx++) {
+        const u = uv.x + ((depth - tx - 1) / Math.max(1, depth)) * uv.w;
+        const yShift = Math.floor(tx * 0.55);
+        this.writeSkinPixelToSprite(data, canvasW, canvasH, skin, u, v, dstX - tx, dstY + ty - yShift, shade, variant);
+      }
+    }
+  }
+
+  paintZombieTopFace(data, canvasW, canvasH, skin, uv, dstX, dstY, dstW, topH, skew, shade, variant) {
+    for (let ty = 0; ty < topH; ty++) {
+      const v = uv.y + (ty / Math.max(1, topH)) * uv.h;
+      for (let tx = 0; tx < dstW; tx++) {
+        const u = uv.x + (tx / Math.max(1, dstW)) * uv.w;
+        const xShift = Math.floor((topH - ty - 1) * skew);
+        this.writeSkinPixelToSprite(data, canvasW, canvasH, skin, u, v, dstX + tx + xShift, dstY + ty, shade, variant);
+      }
+    }
+  }
+
+  paintZombieCuboid(data, canvasW, canvasH, skin, partFaces, layout, shades, variant) {
+    const { x, y, width, height, depth, topHeight, topSkew } = layout;
+    this.paintZombieTopFace(data, canvasW, canvasH, skin, partFaces.top, x, y - topHeight, width, topHeight, topSkew, shades.top, variant);
+    this.paintZombieLeftFace(data, canvasW, canvasH, skin, partFaces.left, x - 1, y, height, depth, shades.side ?? shades.left ?? 0.7, variant);
+    this.paintZombieFrontFace(data, canvasW, canvasH, skin, partFaces.front, x, y, width, height, shades.front, variant);
+    this.paintZombieRightFace(data, canvasW, canvasH, skin, partFaces.right, x + width, y, height, depth, shades.side ?? shades.right ?? 0.7, variant);
+  }
+
+  applyZombieVariantTint(r, g, b, variant, shade) {
+    let mul = shade;
+    if (variant === "chase")  mul *= 1.04;
+    if (variant === "attack") mul *= 1.08;
+    if (variant === "charge") mul *= 1.10;
+
+    let outR = r * mul;
+    let outG = g * mul;
+    let outB = b * mul;
+
+    if      (variant === "chase")  { outR = lerp(outR, 170, 0.08); outG = lerp(outG, 60, 0.03); outB = lerp(outB, 70, 0.04); }
+    else if (variant === "attack") { outR = lerp(outR, 230, 0.18); outG = lerp(outG, 45, 0.12); outB = lerp(outB, 45, 0.10); }
+    else if (variant === "charge") { outR = lerp(outR, 255, 0.25); outG = lerp(outG, 70, 0.10); outB = lerp(outB, 50, 0.12); }
+
+    return [constrain(outR, 0, 255), constrain(outG, 0, 255), constrain(outB, 0, 255)];
+  }
+
+  buildZombieSpriteVariant(width, height, variant) {
+    const skinnedData = this.buildZombieSkinSpriteVariant(width, height, variant);
+    if (skinnedData) return skinnedData;
+
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = 4 * (y * width + x);
+        const head     = x >= 14 && x <= 24 && y >= 4  && y <= 14;
+        const body     = x >= 14 && x <= 24 && y >= 15 && y <= 30;
+        const leftArm  = x >= 9  && x <= 13 && y >= 17 && y <= 30;
+        const rightArm = x >= 25 && x <= 29 && y >= 17 && y <= 30;
+        const leftLeg  = x >= 12 && x <= 16 && y >= 31 && y <= 49;
+        const rightLeg = x >= 18 && x <= 22 && y >= 31 && y <= 49;
+
+        if (!head && !body && !leftArm && !rightArm && !leftLeg && !rightLeg) { data[idx + 3] = 0; continue; }
+
+        let base = [48, 34, 28];
+        if (head) base = [92, 170, 92];
+        else if (body || leftArm || rightArm) base = [64, 118, 162];
+
+        const [tintedR, tintedG, tintedB] = this.applyZombieVariantTint(base[0], base[1], base[2], variant, 1);
+        data[idx] = tintedR; data[idx + 1] = tintedG; data[idx + 2] = tintedB; data[idx + 3] = 255;
+      }
+    }
+
+    const eyeColor = variant === "charge" ? [255, 80, 70] : [235, 70, 70];
+    for (const [ex, ey] of [[16, 7], [17, 7], [21, 7], [22, 7]]) {
+      if (ex < 0 || ex >= width || ey < 0 || ey >= height) continue;
+      const eyeIdx = 4 * (ey * width + ex);
+      data[eyeIdx] = eyeColor[0]; data[eyeIdx + 1] = eyeColor[1];
+      data[eyeIdx + 2] = eyeColor[2]; data[eyeIdx + 3] = 255;
+    }
+    return data;
+  }
+
+// --- Collect orb sprite cache ---
+
+  createCollectOrbSpriteCache() {
+    const width = 20; const height = 20;
+    return {
+      width, height,
+      safe:    this.buildCollectOrbSpriteVariant(width, height, "safe"),
+      warning: this.buildCollectOrbSpriteVariant(width, height, "warning"),
+    };
+  }
+
+  buildCollectOrbSpriteVariant(width, height, variant) {
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const nx = (x / (width  - 1)) * 2 - 1;
+        const ny = (y / (height - 1)) * 2 - 1;
+        const r  = Math.hypot(nx, ny);
+        const idx = 4 * (y * width + x);
+        const angle = Math.atan2(ny, nx);
+        const jagged = variant === "warning" ? Math.sin(angle * 8) * 0.08 : 0;
+        const edge = 1 - (r + jagged);
+        if (edge <= 0) { data[idx + 3] = 0; continue; }
+        const core    = Math.max(0, 1 - r / 0.38);
+        const ring    = Math.max(0, 1 - Math.abs(r - 0.62) / 0.12);
+        const sparkle = variant === "warning"
+          ? Math.max(0, Math.sin((nx - ny) * 18) * 0.25)
+          : Math.max(0, Math.sin((nx + ny) * 14) * 0.2);
+        const intensity = constrain(110 + edge * 95 + core * 50 + ring * 45 + sparkle * 30, 0, 255);
+        const alpha     = constrain(edge * edge * 255 + ring * 35, 0, 255);
+        data[idx] = intensity; data[idx + 1] = intensity; data[idx + 2] = intensity; data[idx + 3] = alpha;
+      }
+    }
+    return data;
+  }
+
+// --- Motion blur ---
+
+  createMotionBlurBuffer() {
+    const width  = Math.max(96, Math.floor(SCREEN_WIDTH  * MOTION_BLUR_BUFFER_SCALE));
+    const height = Math.max(54, Math.floor(SCREEN_HEIGHT * MOTION_BLUR_BUFFER_SCALE));
+    const buffer = createGraphics(width, height);
+    buffer.pixelDensity(1);
+    return buffer;
+  }
+
+  syncMotionBlurReference() {
+    this.prevPlayerPosX  = this.player.posX;
+    this.prevPlayerPosY  = this.player.posY;
+    this.prevPlayerAngle = this.player.angle;
+  }
+
+  drawMotionBlurOverlay() {
+    if (!this.motionBlurEnabled) return;
+    if (!this.motionBlurBuffer) return;
+    if (this.motionBlurAmount <= MOTION_BLUR_MIN_TRIGGER) return;
+    const alpha = MOTION_BLUR_MAX_ALPHA * this.motionBlurAmount;
+    if (alpha <= 1) return;
+    push();
+    tint(255, alpha);
+    image(this.motionBlurBuffer, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    noTint();
+    pop();
+  }
+
+  captureMotionBlurFrame() {
+    if (!this.motionBlurEnabled) return;
+    if (!this.motionBlurBuffer) return;
+    if (this.motionBlurAmount <= MOTION_BLUR_MIN_TRIGGER) return;
+    this.motionBlurFrameCounter = (this.motionBlurFrameCounter + 1) % MOTION_BLUR_CAPTURE_STEP;
+    if (this.motionBlurFrameCounter !== 0) return;
+    if (!this.canvasEl || !document.body.contains(this.canvasEl)) {
+      this.canvasEl = document.querySelector("canvas");
+      if (!this.canvasEl) return;
+    }
+    try {
+      const ctx = this.motionBlurBuffer.drawingContext;
+      ctx.clearRect(0, 0, this.motionBlurBuffer.width, this.motionBlurBuffer.height);
+      ctx.drawImage(this.canvasEl, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, this.motionBlurBuffer.width, this.motionBlurBuffer.height);
+    } catch {
+      this.motionBlurEnabled = false;
+      this.motionBlurAmount  = 0;
+      if (this.motionBlurBuffer) this.motionBlurBuffer.clear();
+      this.motionBlurBuffer = null;
+    }
+  }
+
+// --- Camera utility ---
+
+  cameraScreenOffsetPx() {
+    return this.player.cameraVerticalOffsetPx();
+  }
+
+// --- drawSkyAndFloor() — updated: horizon respects camera offset ---
+
+  drawSkyAndFloor() {
+    const cyclePhase  = (this.survivalSeconds() % 90) / 90;
+    const nightFactor = (Math.sin(cyclePhase * TWO_PI - HALF_PI) + 1) / 2;
+
+    const skyR = lerp(85, 12, nightFactor);
+    const skyG = lerp(130, 14, nightFactor);
+    const skyB = lerp(210, 45, nightFactor);
+
+    const floorR = lerp(95, 28, nightFactor);
+    const floorG = lerp(80, 22, nightFactor);
+    const floorB = lerp(65, 16, nightFactor);
+
+    const horizon = constrain(
+      SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx(),
+      0,
+      SCREEN_HEIGHT
+    );
+
+    noStroke();
+    fill(skyR, skyG, skyB); rect(0, 0, SCREEN_WIDTH, horizon);
+    fill(floorR, floorG, floorB); rect(0, horizon, SCREEN_WIDTH, SCREEN_HEIGHT - horizon);
+  }
+
+// --- drawVignette() — unchanged ---
+
+  drawVignette() {
+    const cx = SCREEN_WIDTH / 2;
+    const cy = SCREEN_HEIGHT / 2;
+    const maxR = Math.hypot(cx, cy);
+    noStroke();
+    for (let ring = 3; ring >= 1; ring--) {
+      const frac  = ring / 3;
+      const alpha = frac * frac * 40;
+      fill(0, 0, 0, alpha);
+      ellipse(cx, cy, maxR * 2 * (0.65 + frac * 0.35), maxR * 2 * (0.65 + frac * 0.35));
+    }
+  }
+
+// --- renderFrame() — main pipeline ---
+
+  renderFrame() {
+    /*
+      PERFORMANCE-CRITICAL RENDER PIPELINE
+      ====================================
+      Steps :
+        1. Draw sky & floor with two fast rect() calls.
+        2. loadPixels()  — copy the canvas into the pixels[] typed array.
+        3. castAllRays()  — write textured wall columns into pixels[].
+        4. drawSpritesToBuffer() — write sprites into pixels[].
+        5. updatePixels() — push the modified array back to the canvas. (1 call!)
+        6. Draw lightweight overlays (vignette, minimap, HUD) with normal p5 shapes.
+    */
+    this.drawSkyAndFloor();
+
+    loadPixels();                // step 2
+    this.castAllRays();          // step 3
+    this.drawSpritesToBuffer();  // step 4
+    updatePixels();              // step 5
+
+    this.drawMotionBlurOverlay();
+    this.captureMotionBlurFrame();
+
+    // Lightweight overlay draws
+    const shake = this.currentShakeOffset();
+    push();
+    translate(shake.x, shake.y);
+    this.drawVignette();
+    this.drawMinimap();
+    this.drawHUD();
+    this.drawFirstPersonWeapon();
+    this.drawCrosshair();
+    pop();
+  }
+
+// --- castAllRays() — DDA raycasting ---
+
+  castAllRays() {
+    /*
+      For each screen column we cast one ray using the DDA
+      (Digital Differential Analyser) algorithm.  When we hit
+      a wall we compute perpendicular distance for correct
+      projection and sample the texture column.
+    */
+    const halfFOV = FIELD_OF_VIEW_RADIANS / 2;
+    const cameraOffset = this.cameraScreenOffsetPx();
+
+    for (let col = 0; col < RAY_COUNT; col++) {
+      const rayScreenFraction = (col / RAY_COUNT) * 2 - 1;
+      const rayAngle = this.player.angle + Math.atan(rayScreenFraction * Math.tan(halfFOV));
+
+      const rayDirX = Math.cos(rayAngle);
+      const rayDirY = Math.sin(rayAngle);
+
+      // --- DDA setup ---
+      let mapX = Math.floor(this.player.posX);
+      let mapY = Math.floor(this.player.posY);
+
+      const deltaDistX = Math.abs(rayDirX) < 1e-10 ? 1e10 : Math.abs(1 / rayDirX);
+      const deltaDistY = Math.abs(rayDirY) < 1e-10 ? 1e10 : Math.abs(1 / rayDirY);
+
+      let stepX, stepY;
+      let sideDistX, sideDistY;
+
+      if (rayDirX < 0) {
+        stepX = -1;
+        sideDistX = (this.player.posX - mapX) * deltaDistX;
+      } else {
+        stepX = 1;
+        sideDistX = (mapX + 1.0 - this.player.posX) * deltaDistX;
+      }
+      if (rayDirY < 0) {
+        stepY = -1;
+        sideDistY = (this.player.posY - mapY) * deltaDistY;
+      } else {
+        stepY = 1;
+        sideDistY = (mapY + 1.0 - this.player.posY) * deltaDistY;
+      }
+
+      // --- DDA loop ---
+      let hitWall = false;
+      let hitSide = 0;
+      let tileType = 0;
+      let stepsDone = 0;
+
+      while (!hitWall && stepsDone < MAX_RAY_DISTANCE * 2) {
+        if (sideDistX < sideDistY) {
+          sideDistX += deltaDistX;
+          mapX += stepX;
+          hitSide = 0;
+        } else {
+          sideDistY += deltaDistY;
+          mapY += stepY;
+          hitSide = 1;
+        }
+
+        stepsDone++;
+
+        if (mapX < 0 || mapX >= MAP_TILE_COUNT || mapY < 0 || mapY >= MAP_TILE_COUNT) {
+          hitWall = true;
+          tileType = 3;
+          break;
+        }
+
+        if (worldTileMap[mapY][mapX] !== 0) {
+          hitWall = true;
+          tileType = worldTileMap[mapY][mapX];
+        }
+      }
+
+      if (!hitWall) {
+        this.zBuffer[col] = MAX_RAY_DISTANCE;
+        continue;
+      }
+
+      // --- Perpendicular distance (avoids fish-eye) ---
+      let perpDist;
+      if (hitSide === 0) {
+        perpDist = (mapX - this.player.posX + (1 - stepX) / 2) / rayDirX;
+      } else {
+        perpDist = (mapY - this.player.posY + (1 - stepY) / 2) / rayDirY;
+      }
+      perpDist = Math.abs(perpDist);
+      if (perpDist < 0.001) perpDist = 0.001;
+
+      this.zBuffer[col] = perpDist;
+
+      // --- Wall strip height ---
+      const wallStripHeight = (SCREEN_HEIGHT * WALL_HEIGHT_PROJECTION_FACTOR) / perpDist;
+      const drawStart = Math.floor((SCREEN_HEIGHT - wallStripHeight) / 2 + cameraOffset);
+
+      // --- Texture mapping ---
+      let wallHitFraction;
+      if (hitSide === 0) {
+        wallHitFraction = this.player.posY + perpDist * rayDirY;
+      } else {
+        wallHitFraction = this.player.posX + perpDist * rayDirX;
+      }
+      wallHitFraction -= Math.floor(wallHitFraction);
+
+      const texX = Math.floor(wallHitFraction * TEXTURE_SIZE);
+
+      // --- Draw the textured wall column ---
+      const cachedTexPixels = texturePixelCache[tileType];
+      if (cachedTexPixels) {
+        this.drawTexturedColumn(col, drawStart, wallStripHeight, cachedTexPixels, texX, perpDist, hitSide);
+      }
+    }
+  }
+
+// ─── drawTexturedColumn() ────────────────────────────────────────────────────
+
+  /**
+   * Draws one vertical textured wall column directly into the canvas pixels[] array.
+   * @param {Uint8ClampedArray} texPixels — pre-cached RGBA pixel data of the block texture
+   */
+  drawTexturedColumn(screenCol, drawStart, stripHeight, texPixels, texX, distance, hitSide) {
+    const rawFog = constrain(1 - (distance / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
+    const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+    const sideBrightness = hitSide === 1 ? SIDE_SHADE_FACTOR : 1.0;
+    const combinedShade = fogFactor * sideBrightness;
+
+    const yStart = Math.max(0, Math.floor(drawStart));
+    const yEnd   = Math.min(SCREEN_HEIGHT, Math.floor(drawStart + stripHeight));
+    const invStripHeight = TEXTURE_SIZE / stripHeight;
+    const safeTexX = texX < 0 ? 0 : (texX >= TEXTURE_SIZE ? TEXTURE_SIZE - 1 : texX);
+
+    for (let screenY = yStart; screenY < yEnd; screenY++) {
+      const texY = Math.floor((screenY - drawStart) * invStripHeight);
+      const safeTexY = texY < 0 ? 0 : (texY >= TEXTURE_SIZE ? TEXTURE_SIZE - 1 : texY);
+
+      const srcIdx = 4 * (safeTexY * TEXTURE_SIZE + safeTexX);
+      const dstIdx = 4 * (screenY * SCREEN_WIDTH + screenCol);
+      pixels[dstIdx]     = texPixels[srcIdx]     * combinedShade;
+      pixels[dstIdx + 1] = texPixels[srcIdx + 1] * combinedShade;
+      pixels[dstIdx + 2] = texPixels[srcIdx + 2] * combinedShade;
+    }
+  }
+
+// --- drawSpritesToBuffer() — build list and sort back-to-front ---
+
+  drawSpritesToBuffer() {
+    const allSprites = [];
+
+    for (const orb of this.orbs) {
+      const dist = Math.hypot(orb.posX - this.player.posX, orb.posY - this.player.posY);
+      let spriteType;
+      if (orb.isSafe())         spriteType = "safe";
+      else if (orb.isWarning()) spriteType = "warning";
+      else if (orb.isChasing()) spriteType = "chase";
+      else                      spriteType = "patrol";
+      allSprites.push({ x: orb.posX, y: orb.posY, dist, type: spriteType, obj: orb });
+    }
+
+    for (const p of this.particles) {
+      const dist = Math.hypot(p.posX - this.player.posX, p.posY - this.player.posY);
+      allSprites.push({ x: p.posX, y: p.posY, dist, type: "particle", obj: p });
+    }
+
+    for (const wm of this.worldModules) {
+      const dist = Math.hypot(wm.posX - this.player.posX, wm.posY - this.player.posY);
+      allSprites.push({ x: wm.posX, y: wm.posY, dist, type: "world-module", obj: wm });
+    }
+
+    for (const drop of this.drops) {
+      const dist = Math.hypot(drop.posX - this.player.posX, drop.posY - this.player.posY);
+      allSprites.push({ x: drop.posX, y: drop.posY, dist, type: "drop", obj: drop });
+    }
+
+    for (const beacon of this.missionBeacons) {
+      if (beacon.activated) continue;
+      const dist = Math.hypot(beacon.posX - this.player.posX, beacon.posY - this.player.posY);
+      allSprites.push({ x: beacon.posX, y: beacon.posY, dist, type: "mission-beacon", obj: beacon });
+    }
+
+    if (this.extractionPortal) {
+      const dist = Math.hypot(this.extractionPortal.posX - this.player.posX, this.extractionPortal.posY - this.player.posY);
+      allSprites.push({
+        x: this.extractionPortal.posX,
+        y: this.extractionPortal.posY,
+        dist,
+        type: "extraction-portal",
+        obj: this.extractionPortal,
+      });
+    }
+
+    if (this.punchMachine) {
+      const dist = Math.hypot(this.punchMachine.posX - this.player.posX, this.punchMachine.posY - this.player.posY);
+      allSprites.push({
+        x: this.punchMachine.posX,
+        y: this.punchMachine.posY,
+        dist,
+        type: "punch-machine",
+        obj: this.punchMachine,
+      });
+    }
+
+    // Sort back-to-front
+    allSprites.sort((a, b) => b.dist - a.dist);
+
+    for (const sp of allSprites) {
+      this.drawSingleSpriteToBuffer(sp);
+    }
+  }
+
+// --- drawSingleSpriteToBuffer() — per-pixel sprite rendering ---
+
+  /**
+   * Draws a single sprite directly into the pixels[] buffer.
+   * Billboard projection with z-buffer occlusion.
+   */
+  drawSingleSpriteToBuffer(spriteData) {
+    const relX = spriteData.x - this.player.posX;
+    const relY = spriteData.y - this.player.posY;
+
+    const cosA = Math.cos(this.player.angle);
+    const sinA = Math.sin(this.player.angle);
+    const transformX = -relX * sinA + relY * cosA;
+    const transformY =  relX * cosA + relY * sinA;
+
+    if (transformY <= 0.1) return;
+
+    const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
+    const spriteScreenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
+    const isZombieHumanoid = spriteData.type === "patrol" || spriteData.type === "chase";
+    const isCollectOrb = spriteData.type === "safe" || spriteData.type === "warning";
+    const isMissionBeacon = spriteData.type === "mission-beacon";
+    const isExtractionPortal = spriteData.type === "extraction-portal";
+    const isPunchMachine = spriteData.type === "punch-machine";
+
+    let worldSize = 0.6;
+    if (spriteData.type === "particle") worldSize = 0.15;
+    if (isZombieHumanoid) worldSize = 0.92;
+    if (spriteData.type === "warning") worldSize = 0.65;
+    if (spriteData.type === "world-module") worldSize = 0.68;
+    if (isMissionBeacon) worldSize = 0.78;
+    if (isExtractionPortal) worldSize = 1.06;
+    if (isPunchMachine) worldSize = 0.92;
+    if (spriteData.type === "drop") {
+      if (spriteData.obj.type === "crate") worldSize = 0.5;
+      else if (spriteData.obj.type === "rounds") worldSize = 0.46;
+      else worldSize = 0.42;
+    }
+    const spriteBaseSize = Math.abs((worldSize / transformY) * fovScale);
+    let spriteScreenW = spriteBaseSize;
+    let spriteScreenH = spriteBaseSize;
+    if (isZombieHumanoid) {
+      const zombieAspect = this.zombieSpriteCache.height / Math.max(1, this.zombieSpriteCache.width);
+      spriteScreenW = Math.min(spriteBaseSize, SCREEN_HEIGHT * 0.4);
+      spriteScreenH = Math.min(spriteScreenW * zombieAspect, SCREEN_HEIGHT * 0.62);
+    }
+
+    const drawStartX = Math.max(0, Math.floor(spriteScreenX - spriteScreenW / 2));
+    const drawEndX   = Math.min(SCREEN_WIDTH, Math.floor(spriteScreenX + spriteScreenW / 2));
+    const cameraOffset = this.cameraScreenOffsetPx();
+    let drawStartY = Math.max(0, Math.floor(SCREEN_HEIGHT / 2 - spriteScreenH / 2 + cameraOffset));
+    let drawEndY   = Math.min(SCREEN_HEIGHT, Math.floor(SCREEN_HEIGHT / 2 + spriteScreenH / 2 + cameraOffset));
+
+    if (isZombieHumanoid) {
+      const bobPx = Math.sin(millis() * 0.01 + spriteData.obj.posX * 0.8 + spriteData.obj.posY * 0.6)
+        * Math.max(1, Math.min(4, spriteScreenH * 0.04));
+      const bobOffset = Math.floor(bobPx);
+      drawStartY = Math.max(0, drawStartY + bobOffset);
+      drawEndY = Math.min(SCREEN_HEIGHT, drawEndY + bobOffset);
+    }
+
+    if (drawStartX >= drawEndX || drawStartY >= drawEndY) return;
+
+    const rawFog = constrain(1 - (spriteData.dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
+    const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+
+    let baseR = 0;
+    let baseG = 0;
+    let baseB = 0;
+    let baseA = 255;
+    if (!isZombieHumanoid) {
+      if (spriteData.type === "safe") {
+        const pulse = 0.7 + 0.3 * Math.sin(millis() * 0.006);
+        baseR = 60 * pulse;
+        baseG = 255 * pulse;
+        baseB = 100 * pulse;
+        const mp = spriteData.obj.mutationProgress();
+        baseR = lerp(baseR, 255, mp * 0.5);
+        baseG = lerp(baseG, 180, mp * 0.3);
+      } else if (spriteData.type === "warning") {
+        const wp = spriteData.obj.warningProgress();
+        const flash = Math.sin(millis() * 0.025) > 0 ? 1 : 0.4;
+        baseR = lerp(255, 255, wp) * flash;
+        baseG = lerp(180, 40, wp) * flash;
+        baseB = 30 * flash;
+      } else if (spriteData.type === "world-module") {
+        const wm = spriteData.obj;
+        const pulse = 0.72 + 0.28 * Math.sin(millis() * 0.008 + wm.posX * 0.8 + wm.posY * 0.5);
+        if (wm.type === "aegis") {
+          baseR = 85 * pulse;
+          baseG = 225 * pulse;
+          baseB = 255;
+        } else if (wm.type === "emp") {
+          baseR = 180 * pulse;
+          baseG = 235 * pulse;
+          baseB = 255 * pulse;
+        } else if (wm.type === "chrono") {
+          baseR = 200 * pulse;
+          baseG = 120 * pulse;
+          baseB = 255;
+        }
+      } else if (spriteData.type === "drop") {
+        const drop = spriteData.obj;
+        const pulse = 0.75 + 0.25 * Math.sin(millis() * 0.015 + drop.posX * 1.8);
+        if (drop.type === "ammo") {
+          baseR = 255;
+          baseG = 210 * pulse;
+          baseB = 100 * pulse;
+        } else if (drop.type === "score") {
+          baseR = 255 * pulse;
+          baseG = 255;
+          baseB = 140 * pulse;
+        } else if (drop.type === "pulse") {
+          baseR = 220 * pulse;
+          baseG = 170 * pulse;
+          baseB = 255;
+        } else if (drop.type === "rounds") {
+          baseR = 255;
+          baseG = 165 * pulse;
+          baseB = 92 * pulse;
+        } else {
+          baseR = 170 * pulse;
+          baseG = 220 * pulse;
+          baseB = 255;
+        }
+      } else if (isMissionBeacon) {
+        const beaconPulse = 0.72 + 0.28 * Math.sin(millis() * 0.01 + spriteData.obj.pulseOffset);
+        baseR = 120 * beaconPulse;
+        baseG = 250 * beaconPulse;
+        baseB = 220;
+      } else if (isExtractionPortal) {
+        const portalPulse = 0.65 + 0.35 * Math.sin(millis() * 0.014);
+        baseR = 90 * portalPulse;
+        baseG = 255;
+        baseB = 165 * portalPulse;
+      } else if (isPunchMachine) {
+        const now = millis();
+        const sinceUse = now - spriteData.obj.lastUseMs;
+        const cooldownFrac = constrain(sinceUse / PUNCH_MACHINE_COOLDOWN_MS, 0, 1);
+        const pulse = 0.72 + 0.28 * Math.sin(now * 0.014);
+        baseR = lerp(255, 175, cooldownFrac) * pulse;
+        baseG = lerp(90, 210, cooldownFrac) * pulse;
+        baseB = 255;
+      } else if (spriteData.type === "particle") {
+        const p = spriteData.obj;
+        baseR = p.colorArray[0];
+        baseG = p.colorArray[1];
+        baseB = p.colorArray[2];
+        baseA = p.opacity();
+      }
+    }
+
+    const finalR = baseR * fogFactor;
+    const finalG = baseG * fogFactor;
+    const finalB = baseB * fogFactor;
+    const invSize = 1 / Math.max(spriteScreenW, spriteScreenH);
+    const alphaFrac = baseA / 255;
+    const invAlpha = 1 - alphaFrac;
+
+    const zombieTex = isZombieHumanoid ? this.resolveZombieTextureForSprite(spriteData) : null;
+    const zombieTexW = this.zombieSpriteCache.width;
+    const zombieTexH = this.zombieSpriteCache.height;
+    const zombieSpriteW = Math.max(1, drawEndX - drawStartX);
+    const zombieSpriteH = Math.max(1, drawEndY - drawStartY);
+    const zombieStepX = isZombieHumanoid ? zombieTexW / zombieSpriteW : 0;
+    const zombieStepY = isZombieHumanoid ? zombieTexH / zombieSpriteH : 0;
+
+    const orbTex = isCollectOrb
+      ? (spriteData.type === "warning" ? this.collectOrbSpriteCache.warning : this.collectOrbSpriteCache.safe)
+      : null;
+    const orbTexW = this.collectOrbSpriteCache.width;
+    const orbTexH = this.collectOrbSpriteCache.height;
+    const orbSpriteW = Math.max(1, drawEndX - drawStartX);
+    const orbSpriteH = Math.max(1, drawEndY - drawStartY);
+    const orbStepX = isCollectOrb ? orbTexW / orbSpriteW : 0;
+    const orbStepY = isCollectOrb ? orbTexH / orbSpriteH : 0;
+
+    for (let sx = drawStartX; sx < drawEndX; sx++) {
+      if (transformY > this.zBuffer[sx] + 0.035) continue;
+
+      let zombieTx = 0;
+      if (isZombieHumanoid) {
+        zombieTx = Math.min(zombieTexW - 1, Math.floor((sx - drawStartX) * zombieStepX));
+      }
+
+      let orbTx = 0;
+      if (isCollectOrb) {
+        orbTx = Math.min(orbTexW - 1, Math.floor((sx - drawStartX) * orbStepX));
+      }
+
+      for (let sy = drawStartY; sy < drawEndY; sy++) {
+        const fracX = (sx - drawStartX) * invSize - 0.5;
+        const fracY = (sy - drawStartY) * invSize - 0.5;
+        const dstIdx = 4 * (sy * SCREEN_WIDTH + sx);
+
+        if (isZombieHumanoid) {
+          const zombieTy = Math.min(zombieTexH - 1, Math.floor((sy - drawStartY) * zombieStepY));
+          const srcIdx = 4 * (zombieTy * zombieTexW + zombieTx);
+          const zAlpha = zombieTex[srcIdx + 3] / 255;
+          if (zAlpha <= 0.001) continue;
+          const invZAlpha = 1 - zAlpha;
+          pixels[dstIdx]     = zombieTex[srcIdx]     * fogFactor * zAlpha + pixels[dstIdx]     * invZAlpha;
+          pixels[dstIdx + 1] = zombieTex[srcIdx + 1] * fogFactor * zAlpha + pixels[dstIdx + 1] * invZAlpha;
+          pixels[dstIdx + 2] = zombieTex[srcIdx + 2] * fogFactor * zAlpha + pixels[dstIdx + 2] * invZAlpha;
+          continue;
+        }
+
+        if (isCollectOrb) {
+          const orbTy = Math.min(orbTexH - 1, Math.floor((sy - drawStartY) * orbStepY));
+          const srcIdx = 4 * (orbTy * orbTexW + orbTx);
+          const oAlpha = orbTex[srcIdx + 3] / 255;
+          if (oAlpha <= 0.001) continue;
+          const invOAlpha = 1 - oAlpha;
+          const orbR = (orbTex[srcIdx]     / 255) * finalR;
+          const orbG = (orbTex[srcIdx + 1] / 255) * finalG;
+          const orbB = (orbTex[srcIdx + 2] / 255) * finalB;
+          pixels[dstIdx]     = orbR * oAlpha + pixels[dstIdx]     * invOAlpha;
+          pixels[dstIdx + 1] = orbG * oAlpha + pixels[dstIdx + 1] * invOAlpha;
+          pixels[dstIdx + 2] = orbB * oAlpha + pixels[dstIdx + 2] * invOAlpha;
+          continue;
+        }
+
+        if (isMissionBeacon) {
+          const diamond = Math.abs(fracX) * 0.9 + Math.abs(fracY);
+          if (diamond > 0.62) continue;
+        } else if (isExtractionPortal) {
+          const radial = fracX * fracX + fracY * fracY;
+          if (radial > 0.24 || radial < 0.09) continue;
+        } else if (isPunchMachine) {
+          const body  = Math.abs(fracX) <= 0.36 && fracY > -0.5 && fracY < 0.55;
+          const crown = Math.abs(fracX) <= 0.22 && fracY >= -0.62 && fracY <= -0.5;
+          if (!body && !crown) continue;
+        }
+
+        if (!isMissionBeacon && !isExtractionPortal && !isPunchMachine && fracX * fracX + fracY * fracY > 0.2) continue;
+
+        if (alphaFrac >= 0.98) {
+          pixels[dstIdx]     = finalR;
+          pixels[dstIdx + 1] = finalG;
+          pixels[dstIdx + 2] = finalB;
+        } else {
+          pixels[dstIdx]     = finalR * alphaFrac + pixels[dstIdx]     * invAlpha;
+          pixels[dstIdx + 1] = finalG * alphaFrac + pixels[dstIdx + 1] * invAlpha;
+          pixels[dstIdx + 2] = finalB * alphaFrac + pixels[dstIdx + 2] * invAlpha;
+        }
+      }
+    }
+  }
+
+// --- resolveZombie* — animation helpers ---
+
+  resolveZombieTextureForSprite(spriteData) {
+    const variant   = this.resolveZombieAnimationVariant(spriteData);
+    const direction = this.resolveZombieDirectionForSprite(spriteData);
+    const cacheKey  = `${variant}${direction}Frames`;
+
+    if (this.zombieSpriteCache.mode === "sheet" || this.zombieSpriteCache.mode === "generated") {
+      const frameList = this.zombieSpriteCache[cacheKey];
+      if (frameList && frameList.length > 0) {
+        const speedFactor   = this.resolveZombieAnimationSpeedFactor(spriteData, variant);
+        const effectiveFps  = this.zombieSpriteCache.fps * speedFactor;
+        const frameDurationMs = 1000 / Math.max(1, effectiveFps);
+        const frameIndex    = Math.floor(millis() / frameDurationMs) % frameList.length;
+        return frameList[frameIndex];
+      }
+    }
+
+    return variant === "charge"
+      ? this.zombieSpriteCache.charge
+      : (variant === "attack"
+        ? (this.zombieSpriteCache.attack || this.zombieSpriteCache.chase)
+        : (variant === "chase" ? this.zombieSpriteCache.chase : this.zombieSpriteCache.patrol));
+  }
+
+  resolveZombieAnimationVariant(spriteData) {
+    if (spriteData.type !== "chase") return "patrol";
+    if (spriteData.obj.chargeActive) return "charge";
+    if (spriteData.dist < ZOMBIE_ATTACK_DISTANCE) return "attack";
+    return "chase";
+  }
+
+  resolveZombieDirectionForSprite(spriteData) {
+    const orb = spriteData.obj;
+    if (!orb || typeof orb.moveDirX !== "number" || typeof orb.moveDirY !== "number") return "Front";
+
+    const camRightX = -Math.sin(this.player.angle);
+    const camRightY =  Math.cos(this.player.angle);
+    const side = orb.moveDirX * camRightX + orb.moveDirY * camRightY;
+
+    if (side >  ZOMBIE_SIDE_TURN_THRESHOLD) return "Right";
+    if (side < -ZOMBIE_SIDE_TURN_THRESHOLD) return "Left";
+    return "Front";
+  }
+
+  resolveZombieAnimationSpeedFactor(spriteData, variant) {
+    const orb = spriteData.obj;
+    if (!orb || typeof orb.hunterSpeed !== "number") return 1;
+
+    let currentSpeed = orb.hunterSpeed;
+    if (variant === "patrol") currentSpeed *= HUNTER_PATROL_SPEED_RATIO;
+    if (variant === "charge") currentSpeed *= HUNTER_CHARGE_MULTIPLIER;
+    if (variant === "attack") currentSpeed *= 1.15;
+
+    const base   = Math.max(0.0001, ENEMY_BASE_SPEED * HUNTER_PATROL_SPEED_RATIO);
+    const factor = currentSpeed / base;
+    return constrain(factor, ZOMBIE_ANIM_SPEED_MIN, ZOMBIE_ANIM_SPEED_MAX);
+  }
+
+}
+
+window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
+window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = null;
+
+function preloadZombieSkinTexture() {
+  const zombieSpriteSheetPath =
+    (typeof window !== "undefined" && typeof window.EMBEDDED_ZOMBIE_WALK_DATA_URI === "string")
+      ? window.EMBEDDED_ZOMBIE_WALK_DATA_URI
+      : ZOMBIE_SPRITESHEET_PATH;
+
+  const zombieSkinPath =
+    (typeof window !== "undefined" && typeof window.EMBEDDED_ZOMBIE_SKIN_DATA_URI === "string")
+      ? window.EMBEDDED_ZOMBIE_SKIN_DATA_URI
+      : "assets/textures/zombie.png";
+
+  window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = loadImage(
+    zombieSpriteSheetPath,
+    undefined,
+    () => { window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = null; }
+  );
+
+  window.PRELOADED_ZOMBIE_SKIN_IMAGE = loadImage(
+    zombieSkinPath,
+    undefined,
+    () => {
+      window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
+      console.warn("Zombie skin texture failed to load:", zombieSkinPath);
+    }
+  );
 }
