@@ -153,6 +153,11 @@ class Player {
     this.angle = 0;
     this.moveSpeed = PLAYER_MOVE_SPEED;
     this.radius = PLAYER_RADIUS;
+
+    this.pitch = 0;
+    this.heightOffset = 0;
+    this.verticalVelocity = 0;
+    this.isGrounded = true;
   }
 
   update(deltaSeconds) {
@@ -190,7 +195,33 @@ class Player {
   }
 
   rotateByMouseDelta(deltaX) {
-    this.angle += deltaX * PLAYER_ROTATE_SPEED;
+    this.lookByMouseDelta(deltaX, 0);
+  }
+
+  updateVerticalMotion(deltaSeconds) {
+    if (this.isGrounded && this.verticalVelocity === 0 && this.heightOffset === 0) return;
+
+    this.verticalVelocity -= PLAYER_GRAVITY * deltaSeconds;
+    this.heightOffset += this.verticalVelocity * deltaSeconds;
+
+    if (this.heightOffset <= 0) {
+      this.heightOffset = 0;
+      this.verticalVelocity = 0;
+      this.isGrounded = true;
+    }
+  }
+
+  lookByMouseDelta(deltaX, deltaY) {
+    const sensitivity = getLookSensitivity();
+    this.angle += deltaX * PLAYER_ROTATE_SPEED * sensitivity;
+    this.pitch -= deltaY * PLAYER_PITCH_SPEED * sensitivity;
+    this.pitch = constrain(this.pitch, -PLAYER_MAX_PITCH, PLAYER_MAX_PITCH);
+  }
+
+  cameraVerticalOffsetPx() {
+    const pitchOffset = this.pitch * SCREEN_HEIGHT * CAMERA_PITCH_PIXEL_RATIO;
+    const jumpOffset = this.heightOffset * SCREEN_HEIGHT * CAMERA_JUMP_PIXEL_RATIO;
+    return pitchOffset + jumpOffset;
   }
 }
 
