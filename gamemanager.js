@@ -1,6 +1,4 @@
-/*
- - logique interface dans GameManager
-*/
+
 
 class GameManager {
   initDOM() {
