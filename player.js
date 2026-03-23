@@ -1,7 +1,11 @@
 /*
+<<<<<<< HEAD
   ============================================================
   PLAYER CLASS  (first-person camera)
   ============================================================
+=======
+ - keybinding UI (affichage + remapping)
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
 */
 
 const CONTROL_STORAGE_KEY = "betrayal-box-keybinds";
@@ -24,6 +28,7 @@ const DEFAULT_KEY_BINDINGS = Object.freeze({
 
 let controlBindings = loadControlBindings();
 
+<<<<<<< HEAD
 const pressedKeyCodes = new Set();
 
 window.addEventListener("keydown", (event) => {
@@ -38,6 +43,8 @@ window.addEventListener("blur", () => {
   pressedKeyCodes.clear();
 });
 
+=======
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
 function loadControlBindings() {
   const fallback = { ...DEFAULT_KEY_BINDINGS };
   try {
@@ -67,12 +74,15 @@ function saveControlBindings() {
   }
 }
 
+<<<<<<< HEAD
 function isControlPressed(action) {
   const code = controlBindings[action];
   if (!code) return false;
   return pressedKeyCodes.has(code);
 }
 
+=======
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
 function getControlBinding(action) {
   return controlBindings[action] || DEFAULT_KEY_BINDINGS[action];
 }
@@ -90,7 +100,11 @@ function setControlBinding(action, code) {
   }
 
   if (code === "Escape" || code === "Tab") {
+<<<<<<< HEAD
     return { ok: false, message: "Cette touche est réservée." };
+=======
+    return { ok: false, message: "Cette touche est reservee." };
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
   }
 
   const duplicateAction = CONTROL_ACTIONS.find(
@@ -100,7 +114,11 @@ function setControlBinding(action, code) {
   if (duplicateAction) {
     return {
       ok: false,
+<<<<<<< HEAD
       message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise déjà ${getDisplayKeyName(code)}.`,
+=======
+      message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise deja ${getDisplayKeyName(code)}.`,
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
     };
   }
 
@@ -119,10 +137,17 @@ function resetControlBindings() {
 
 function getDisplayKeyName(code) {
   const aliases = {
+<<<<<<< HEAD
     ArrowUp: "↑",
     ArrowDown: "↓",
     ArrowLeft: "←",
     ArrowRight: "→",
+=======
+    ArrowUp: "^",
+    ArrowDown: "v",
+    ArrowLeft: "<",
+    ArrowRight: ">",
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
     Space: "Espace",
     ShiftLeft: "Shift",
     ShiftRight: "Shift",
@@ -145,6 +170,7 @@ function getMovementLegendText() {
   const left = getDisplayKeyName(getControlBinding("left"));
   const backward = getDisplayKeyName(getControlBinding("backward"));
   const right = getDisplayKeyName(getControlBinding("right"));
+<<<<<<< HEAD
   return `${forward}${left}${backward}${right} — Move | Mouse — Look | Walk over green orbs to collect`;
 }
 
@@ -194,25 +220,89 @@ class Player {
     let moveY = forwardInput * forwardY + strafeInput * strafeY;
 
     // Normalise so diagonal movement isn't faster
+=======
+  return `${forward}${left}${backward}${right} - Move | Mouse - Look | Walk over green orbs to collect`;
+}
+
+const pressedKeyCodes = new Set();
+
+window.addEventListener("keydown", (event) => {
+  pressedKeyCodes.add(event.code);
+});
+
+window.addEventListener("keyup", (event) => {
+  pressedKeyCodes.delete(event.code);
+});
+
+window.addEventListener("blur", () => {
+  pressedKeyCodes.clear();
+});
+
+function isControlPressed(action) {
+  const code = controlBindings[action];
+  if (!code) return false;
+  return pressedKeyCodes.has(code);
+}
+
+class Player {
+  constructor(startX, startY) {
+    this.posX = startX;
+    this.posY = startY;
+    this.angle = 0;
+    this.moveSpeed = PLAYER_MOVE_SPEED;
+    this.radius = PLAYER_RADIUS;
+
+    this.pitch = 0;
+    this.heightOffset = 0;
+    this.verticalVelocity = 0;
+    this.isGrounded = true;
+  }
+
+  update(deltaSeconds) {
+    let forwardInput = 0;
+    let strafeInput = 0;
+
+    if (isControlPressed("forward")) forwardInput += 1;
+    if (isControlPressed("backward")) forwardInput -= 1;
+    if (isControlPressed("left")) strafeInput -= 1;
+    if (isControlPressed("right")) strafeInput += 1;
+
+    const forwardX = Math.cos(this.angle);
+    const forwardY = Math.sin(this.angle);
+    const strafeX = -Math.sin(this.angle);
+    const strafeY = Math.cos(this.angle);
+
+    let moveX = forwardInput * forwardX + strafeInput * strafeX;
+    let moveY = forwardInput * forwardY + strafeInput * strafeY;
+
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const moveMagnitude = Math.hypot(moveX, moveY);
     if (moveMagnitude > 0) {
       moveX = (moveX / moveMagnitude) * this.moveSpeed * deltaSeconds;
       moveY = (moveY / moveMagnitude) * this.moveSpeed * deltaSeconds;
     }
 
+<<<<<<< HEAD
     // --- Wall-sliding collision ---
     // Try X movement alone
+=======
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const newX = this.posX + moveX;
     if (!isWorldBlocked(newX, this.posY, this.radius)) {
       this.posX = newX;
     }
+<<<<<<< HEAD
     // Try Y movement alone
+=======
+
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const newY = this.posY + moveY;
     if (!isWorldBlocked(this.posX, newY, this.radius)) {
       this.posY = newY;
     }
   }
 
+<<<<<<< HEAD
   /**
    * Rotate the camera based on mouse movement (pointer lock delta).
    * Called from the mouseMoved() p5 callback.
@@ -244,5 +334,58 @@ function isWorldBlocked(cx, cy, radius) {
       return true; // solid block
     }
   }
+=======
+  rotateByMouseDelta(deltaX) {
+    this.lookByMouseDelta(deltaX, 0);
+  }
+
+  updateVerticalMotion(deltaSeconds) {
+    if (this.isGrounded && this.verticalVelocity === 0 && this.heightOffset === 0) return;
+
+    this.verticalVelocity -= PLAYER_GRAVITY * deltaSeconds;
+    this.heightOffset += this.verticalVelocity * deltaSeconds;
+
+    if (this.heightOffset <= 0) {
+      this.heightOffset = 0;
+      this.verticalVelocity = 0;
+      this.isGrounded = true;
+    }
+  }
+
+  lookByMouseDelta(deltaX, deltaY) {
+    const sensitivity = getLookSensitivity();
+    this.angle += deltaX * PLAYER_ROTATE_SPEED * sensitivity;
+    this.pitch -= deltaY * PLAYER_PITCH_SPEED * sensitivity;
+    this.pitch = constrain(this.pitch, -PLAYER_MAX_PITCH, PLAYER_MAX_PITCH);
+  }
+
+  cameraVerticalOffsetPx() {
+    const pitchOffset = this.pitch * SCREEN_HEIGHT * CAMERA_PITCH_PIXEL_RATIO;
+    const jumpOffset = this.heightOffset * SCREEN_HEIGHT * CAMERA_JUMP_PIXEL_RATIO;
+    return pitchOffset + jumpOffset;
+  }
+}
+
+function isWorldBlocked(cx, cy, radius) {
+  const offsets = [
+    { dx: -radius, dy: -radius },
+    { dx: radius, dy: -radius },
+    { dx: -radius, dy: radius },
+    { dx: radius, dy: radius },
+  ];
+
+  for (const off of offsets) {
+    const tileCol = Math.floor(cx + off.dx);
+    const tileRow = Math.floor(cy + off.dy);
+
+    if (tileCol < 0 || tileCol >= MAP_TILE_COUNT || tileRow < 0 || tileRow >= MAP_TILE_COUNT) {
+      return true;
+    }
+    if (worldTileMap[tileRow][tileCol] !== 0) {
+      return true;
+    }
+  }
+
+>>>>>>> 849054761324ace091cb613435baa7cbd0695970
   return false;
 }
