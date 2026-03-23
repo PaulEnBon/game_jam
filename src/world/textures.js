@@ -1,4 +1,13 @@
-﻿let blockTextures = {};
+/*
+  ============================================================
+  TEXTURE LOADER (PNG-only)
+  ============================================================
+  All block visuals are loaded from files in assets/textures.
+  No procedural fallback is used so old generated visuals are fully removed.
+*/
+
+/** Store generated texture images (p5.Graphics) keyed by wall-type id. */
+let blockTextures = {};
 
 const EXTERNAL_BLOCK_TEXTURE_PATHS = Object.freeze({
   1: "assets/textures/stone.png",
@@ -6,7 +15,7 @@ const EXTERNAL_BLOCK_TEXTURE_PATHS = Object.freeze({
   3: "assets/textures/grass_side.png",
   4: "assets/textures/mossy_cobblestone.png",
   5: "assets/textures/glowstone.png",
-  6: "assets/textures/lava.png",       // corruption lava
+  6: "assets/textures/lava.png", // corruption
   7: "assets/textures/plank.png",
   8: "assets/textures/leaves.png",
   9: "assets/textures/obsidian.png",
@@ -34,7 +43,9 @@ function preloadExternalBlockTextures() {
     preloadedExternalTextures[blockId] = loadImage(
       imgPath,
       undefined,
-      () => { preloadedExternalTextures[blockId] = null; }
+      () => {
+        preloadedExternalTextures[blockId] = null;
+      }
     );
   }
 }
@@ -63,7 +74,7 @@ function buildMissingTexturePlaceholder() {
     for (let x = 0; x < TEXTURE_SIZE; x++) {
       const index = 4 * (y * TEXTURE_SIZE + x);
       const even = (Math.floor(x / 4) + Math.floor(y / 4)) % 2 === 0;
-      tex.pixels[index]     = even ? 220 : 35;
+      tex.pixels[index] = even ? 220 : 35;
       tex.pixels[index + 1] = 40;
       tex.pixels[index + 2] = even ? 220 : 35;
       tex.pixels[index + 3] = 255;

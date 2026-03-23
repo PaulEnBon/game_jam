@@ -1,8 +1,14 @@
-﻿/*
- - keybinding UI (affichage + remapping)
+/*
+  ============================================================
+  PLAYER CLASS  (first-person camera)
+  ============================================================
 */
 
 const CONTROL_STORAGE_KEY = "betrayal-box-keybinds";
+const LOOK_SENSITIVITY_STORAGE_KEY = "betrayal-box-look-sensitivity";
+const LOOK_SENSITIVITY_DEFAULT = 1;
+const LOOK_SENSITIVITY_MIN = 0.2;
+const LOOK_SENSITIVITY_MAX = 2;
 
 const CONTROL_ACTIONS = ["forward", "backward", "left", "right"];
 
@@ -21,6 +27,21 @@ const DEFAULT_KEY_BINDINGS = Object.freeze({
 });
 
 let controlBindings = loadControlBindings();
+let lookSensitivity = loadLookSensitivity();
+
+const pressedKeyCodes = new Set();
+
+window.addEventListener("keydown", (event) => {
+  pressedKeyCodes.add(event.code);
+});
+
+window.addEventListener("keyup", (event) => {
+  pressedKeyCodes.delete(event.code);
+});
+
+window.addEventListener("blur", () => {
+  pressedKeyCodes.clear();
+});
 
 function loadControlBindings() {
   const fallback = { ...DEFAULT_KEY_BINDINGS };
@@ -51,6 +72,12 @@ function saveControlBindings() {
   }
 }
 
+function isControlPressed(action) {
+  const code = controlBindings[action];
+  if (!code) return false;
+  return pressedKeyCodes.has(code);
+}
+
 function getControlBinding(action) {
   return controlBindings[action] || DEFAULT_KEY_BINDINGS[action];
 }
@@ -68,7 +95,7 @@ function setControlBinding(action, code) {
   }
 
   if (code === "Escape" || code === "Tab") {
-    return { ok: false, message: "Cette touche est reservee." };
+    return { ok: false, message: "Cette touche est réservée." };
   }
 
   const duplicateAction = CONTROL_ACTIONS.find(
@@ -78,7 +105,7 @@ function setControlBinding(action, code) {
   if (duplicateAction) {
     return {
       ok: false,
-      message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise deja ${getDisplayKeyName(code)}.`,
+      message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise déjà ${getDisplayKeyName(code)}.`,
     };
   }
 
@@ -95,12 +122,53 @@ function resetControlBindings() {
   saveControlBindings();
 }
 
+function sanitizeLookSensitivity(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return LOOK_SENSITIVITY_DEFAULT;
+  }
+  return constrain(value, LOOK_SENSITIVITY_MIN, LOOK_SENSITIVITY_MAX);
+}
+
+function loadLookSensitivity() {
+  try {
+    const raw = localStorage.getItem(LOOK_SENSITIVITY_STORAGE_KEY);
+    if (!raw) return LOOK_SENSITIVITY_DEFAULT;
+    return sanitizeLookSensitivity(Number(raw));
+  } catch {
+    return LOOK_SENSITIVITY_DEFAULT;
+  }
+}
+
+function saveLookSensitivity() {
+  try {
+    localStorage.setItem(LOOK_SENSITIVITY_STORAGE_KEY, String(lookSensitivity));
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
+function getLookSensitivity() {
+  return lookSensitivity;
+}
+
+function setLookSensitivity(value) {
+  const nextValue = sanitizeLookSensitivity(Number(value));
+  lookSensitivity = nextValue;
+  saveLookSensitivity();
+  return lookSensitivity;
+}
+
+function resetLookSensitivity() {
+  lookSensitivity = LOOK_SENSITIVITY_DEFAULT;
+  saveLookSensitivity();
+}
+
 function getDisplayKeyName(code) {
   const aliases = {
-    ArrowUp: "^",
-    ArrowDown: "v",
-    ArrowLeft: "<",
-    ArrowRight: ">",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+    ArrowLeft: "←",
+    ArrowRight: "→",
     Space: "Espace",
     ShiftLeft: "Shift",
     ShiftRight: "Shift",
@@ -123,79 +191,94 @@ function getMovementLegendText() {
   const left = getDisplayKeyName(getControlBinding("left"));
   const backward = getDisplayKeyName(getControlBinding("backward"));
   const right = getDisplayKeyName(getControlBinding("right"));
-  return `${forward}${left}${backward}${right} - Move | Mouse - Look | Walk over green orbs to collect`;
-}
-
-const pressedKeyCodes = new Set();
-
-window.addEventListener("keydown", (event) => {
-  pressedKeyCodes.add(event.code);
-});
-
-window.addEventListener("keyup", (event) => {
-  pressedKeyCodes.delete(event.code);
-});
-
-window.addEventListener("blur", () => {
-  pressedKeyCodes.clear();
-});
-
-function isControlPressed(action) {
-  const code = controlBindings[action];
-  if (!code) return false;
-  return pressedKeyCodes.has(code);
+  return `${forward}${left}${backward}${right} — Move | Shift — Sprint | Mouse — Look | Space — Jump | Click — Shoot | F — Punch | Wheel/1-2-3 — Slots | Esc — Pause`;
 }
 
 class Player {
+  /**
+   * @param {number} startX - tile-space X (e.g. 12.5 for centre of tile 12)
+   * @param {number} startY - tile-space Y
+   */
   constructor(startX, startY) {
     this.posX = startX;
     this.posY = startY;
-    this.angle = 0;
+    this.angle = 0;                             // radians, 0 = facing +X
+    this.pitch = 0;                             // vertical look angle
     this.moveSpeed = PLAYER_MOVE_SPEED;
     this.radius = PLAYER_RADIUS;
 
+    // Jump / vertical camera state
+    this.heightOffset = 0;                      // world units above ground
+    this.verticalVelocity = 0;
+    this.isGrounded = true;
+    this.jumpLatch = false;
+  }
+
+  /** Reset position and angle for a new game. */
+  resetToSpawn() {
+    this.posX = MAP_TILE_COUNT / 2 + 0.5;
+    this.posY = MAP_TILE_COUNT / 2 + 0.5;
+    this.angle = 0;
     this.pitch = 0;
     this.heightOffset = 0;
     this.verticalVelocity = 0;
     this.isGrounded = true;
+    this.jumpLatch = false;
   }
 
+  /**
+   * Process WASD / Arrow key movement, frame-rate independent.
+   * Uses **wall sliding** collision : we attempt X and Y movement
+   * separately so the player slides along walls instead of sticking.
+   */
   update(deltaSeconds) {
+    // --- Keyboard input ---
     let forwardInput = 0;
-    let strafeInput = 0;
+    let strafeInput  = 0;
 
-    if (isControlPressed("forward")) forwardInput += 1;
+    if (isControlPressed("forward"))  forwardInput += 1;
     if (isControlPressed("backward")) forwardInput -= 1;
-    if (isControlPressed("left")) strafeInput -= 1;
-    if (isControlPressed("right")) strafeInput += 1;
+    if (isControlPressed("left"))     strafeInput  -= 1;
+    if (isControlPressed("right"))    strafeInput  += 1;
 
+    // Jump (Space)
+    const jumpPressed = pressedKeyCodes.has("Space");
+    if (jumpPressed && !this.jumpLatch && this.isGrounded) {
+      this.verticalVelocity = PLAYER_JUMP_VELOCITY;
+      this.isGrounded = false;
+    }
+    this.jumpLatch = jumpPressed;
+
+    // --- Calculate forward and strafe direction vectors ---
     const forwardX = Math.cos(this.angle);
     const forwardY = Math.sin(this.angle);
-    const strafeX = -Math.sin(this.angle);
-    const strafeY = Math.cos(this.angle);
+    const strafeX  = -Math.sin(this.angle);   // perpendicular right
+    const strafeY  =  Math.cos(this.angle);
 
+    // Combined movement vector
     let moveX = forwardInput * forwardX + strafeInput * strafeX;
     let moveY = forwardInput * forwardY + strafeInput * strafeY;
 
+    // Normalise so diagonal movement isn't faster
     const moveMagnitude = Math.hypot(moveX, moveY);
     if (moveMagnitude > 0) {
       moveX = (moveX / moveMagnitude) * this.moveSpeed * deltaSeconds;
       moveY = (moveY / moveMagnitude) * this.moveSpeed * deltaSeconds;
     }
 
+    // --- Wall-sliding collision ---
+    // Try X movement alone
     const newX = this.posX + moveX;
     if (!isWorldBlocked(newX, this.posY, this.radius)) {
       this.posX = newX;
     }
-
+    // Try Y movement alone
     const newY = this.posY + moveY;
     if (!isWorldBlocked(this.posX, newY, this.radius)) {
       this.posY = newY;
     }
-  }
 
-  rotateByMouseDelta(deltaX) {
-    this.lookByMouseDelta(deltaX, 0);
+    this.updateVerticalMotion(deltaSeconds);
   }
 
   updateVerticalMotion(deltaSeconds) {
@@ -209,6 +292,14 @@ class Player {
       this.verticalVelocity = 0;
       this.isGrounded = true;
     }
+  }
+
+  /**
+   * Rotate the camera based on mouse movement (pointer lock delta).
+   * Called from the mouseMoved() p5 callback.
+   */
+  rotateByMouseDelta(deltaX) {
+    this.lookByMouseDelta(deltaX, 0);
   }
 
   lookByMouseDelta(deltaX, deltaY) {
@@ -225,25 +316,27 @@ class Player {
   }
 }
 
+/**
+ * Checks if a circle at (cx, cy) with given radius overlaps any solid tile.
+ * We test the 4 corner points of the circle's bounding box.
+ * This is a simplified but robust approach for grid-based maps.
+ */
 function isWorldBlocked(cx, cy, radius) {
   const offsets = [
     { dx: -radius, dy: -radius },
-    { dx: radius, dy: -radius },
-    { dx: -radius, dy: radius },
-    { dx: radius, dy: radius },
+    { dx:  radius, dy: -radius },
+    { dx: -radius, dy:  radius },
+    { dx:  radius, dy:  radius },
   ];
-
   for (const off of offsets) {
     const tileCol = Math.floor(cx + off.dx);
     const tileRow = Math.floor(cy + off.dy);
-
     if (tileCol < 0 || tileCol >= MAP_TILE_COUNT || tileRow < 0 || tileRow >= MAP_TILE_COUNT) {
-      return true;
+      return true; // out of bounds = blocked
     }
     if (worldTileMap[tileRow][tileCol] !== 0) {
-      return true;
+      return true; // solid block
     }
   }
-
   return false;
 }

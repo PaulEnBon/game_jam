@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -12,26 +12,38 @@
         <!-- p5.js injects the canvas inside this container in setup() -->
 
         <!-- Click-to-start overlay (needed for pointer lock) -->
-        <div id="start-overlay">
+        <div id="start-overlay" onclick="window.__overlayStartFallback && window.__overlayStartFallback(event)">
           <h1>BETRAYAL BOX</h1>
           <p class="tagline">Nothing is Safe</p>
           <p class="instruction">Click to Play</p>
-          <button id="open-settings-button" type="button">Parametres</button>
-          <p id="control-legend" class="controls">WASD - Move | Mouse - Look | Walk over green orbs to collect</p>
+          <button id="start-button" type="button" onclick="window.__startGameFallback && window.__startGameFallback(event)">Jouer</button>
+          <button id="open-settings-button" type="button" onclick="window.__openSettingsFallback && window.__openSettingsFallback(event)">Paramètres</button>
+          <p id="control-legend" class="controls">WASD — Move &nbsp;|&nbsp; Mouse — Look &nbsp;|&nbsp; Walk over green orbs to collect</p>
+          <p class="objective-hint">Survis vague après vague, active les balises, puis utilise la Punch Machine (F) pour des power-ups.</p>
         </div>
 
         <!-- Game Over overlay -->
         <div id="game-over-overlay" aria-live="polite" aria-hidden="true">
-          <h2>GAME OVER</h2>
+          <h2 id="game-over-title">GAME OVER</h2>
           <p id="game-over-reason">You were eliminated.</p>
           <p class="score-line">Final Score: <span id="final-score">0</span></p>
           <button id="restart-button" type="button">Restart</button>
         </div>
 
+        <div id="pause-overlay" aria-hidden="true">
+          <h2>PAUSE</h2>
+          <p class="pause-subtitle">Le temps est figé</p>
+          <div class="pause-actions">
+            <button id="resume-button" type="button">Reprendre</button>
+            <button id="pause-settings-button" type="button">Paramètres</button>
+            <button id="pause-restart-button" type="button">Recommencer</button>
+          </div>
+        </div>
+
         <div id="settings-overlay" aria-hidden="true">
           <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <h2 id="settings-title">PARAMETRES</h2>
-            <p class="settings-subtitle">Changer les touches de deplacement</p>
+            <h2 id="settings-title">PARAMÈTRES</h2>
+            <p class="settings-subtitle">Changer les touches de deplacement et la sensibilite souris</p>
 
             <div class="bind-grid" role="group" aria-label="Key bindings">
               <span>Avancer</span>
@@ -47,10 +59,25 @@
               <button type="button" class="bind-button" data-action="right">D</button>
             </div>
 
+            <div class="sensitivity-setting" role="group" aria-label="Mouse sensitivity">
+              <label for="sensitivity-input">Sensibilite souris</label>
+              <div class="sensitivity-control-row">
+                <input
+                  id="sensitivity-input"
+                  type="range"
+                  min="0.20"
+                  max="2.00"
+                  step="0.05"
+                  value="1.00"
+                />
+                <span id="sensitivity-value">1.00x</span>
+              </div>
+            </div>
+
             <p id="settings-status" aria-live="polite"></p>
 
             <div class="settings-actions">
-              <button id="reset-controls-button" type="button">Reinitialiser</button>
+              <button id="reset-controls-button" type="button">Réinitialiser</button>
               <button id="close-settings-button" type="button">Fermer</button>
             </div>
           </div>
@@ -60,13 +87,15 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
     <!-- Game files loaded in dependency order -->
-    <script src="constants.js"></script>
-    <script src="textures.js"></script>
-    <script src="map.js"></script>
-    <script src="player.js"></script>
-    <script src="orb.js"></script>
-    <script src="particle.js"></script>
-    <script src="gamemanager.js"></script>
-    <script src="sketch.js"></script>
+    <script src="src/config/constants.js?v=20260306d"></script>
+    <script src="src/world/embedded-textures.js?v=20260306e"></script>
+    <script src="src/world/textures.js?v=20260306h"></script>
+    <script src="src/world/map.js?v=20260306e"></script>
+    <script src="src/world/embedded-zombie.js?v=20260306a"></script>
+    <script src="src/entities/player.js?v=20260306d"></script>
+    <script src="src/entities/orb.js?v=20260306d"></script>
+    <script src="src/entities/particle.js?v=20260306d"></script>
+    <script src="src/systems/gamemanager.js?v=20260306n"></script>
+    <script src="src/app/sketch.js?v=20260306i"></script>
   </body>
 </html>
