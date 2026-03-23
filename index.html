@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Betrayal Box - Nothing is Safe</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="app-shell">
+      <div id="game-container" aria-label="Betrayal Box FPS game area">
+        <!-- p5.js injects the canvas inside this container in setup() -->
+
+        <!-- Click-to-start overlay (needed for pointer lock) -->
+        <div id="start-overlay">
+          <h1>BETRAYAL BOX</h1>
+          <p class="tagline">Nothing is Safe</p>
+          <p class="instruction">Click to Play</p>
+          <button id="open-settings-button" type="button">Paramètres</button>
+          <p id="control-legend" class="controls">WASD — Move &nbsp;|&nbsp; Mouse — Look &nbsp;|&nbsp; Walk over green orbs to collect</p>
+        </div>
+
+        <!-- Game Over overlay -->
+        <div id="game-over-overlay" aria-live="polite" aria-hidden="true">
+          <h2>GAME OVER</h2>
+          <p id="game-over-reason">You were eliminated.</p>
+          <p class="score-line">Final Score: <span id="final-score">0</span></p>
+          <button id="restart-button" type="button">Restart</button>
+        </div>
+
+        <div id="settings-overlay" aria-hidden="true">
+          <div class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <h2 id="settings-title">PARAMÈTRES</h2>
+            <p class="settings-subtitle">Changer les touches de déplacement</p>
+
+            <div class="bind-grid" role="group" aria-label="Key bindings">
+              <span>Avancer</span>
+              <button type="button" class="bind-button" data-action="forward">W</button>
+
+              <span>Reculer</span>
+              <button type="button" class="bind-button" data-action="backward">S</button>
+
+              <span>Gauche</span>
+              <button type="button" class="bind-button" data-action="left">A</button>
+
+              <span>Droite</span>
+              <button type="button" class="bind-button" data-action="right">D</button>
+            </div>
+
+            <p id="settings-status" aria-live="polite"></p>
+
+            <div class="settings-actions">
+              <button id="reset-controls-button" type="button">Réinitialiser</button>
+              <button id="close-settings-button" type="button">Fermer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+    <!-- Game files loaded in dependency order -->
+    <script src="constants.js"></script>
+    <script src="textures.js"></script>
+    <script src="map.js"></script>
+    <script src="player.js"></script>
+    <script src="orb.js"></script>
+    <script src="particle.js"></script>
+    <script src="gamemanager.js"></script>
+    <script src="sketch.js"></script>
+  </body>
+</html>
