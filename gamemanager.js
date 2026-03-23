@@ -1,77 +1,3 @@
-<<<<<<< HEAD
-/*
-  ============================================================
-  GAME MANAGER CLASS
-  ============================================================
-  Central state machine that orchestrates :
-    - Game lifecycle  (waiting → playing → game-over)
-    - Orb spawning & corruption wave
-    - Collision handling
-    - Full render pipeline (sky, raycasting, sprites, overlays)
-*/
-
-class GameManager {
-  constructor() {
-    this.gameState = "waiting";  // "waiting" | "playing" | "game-over"
-    this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
-    this.orbs = [];
-    this.particles = [];
-
-    this.score = 0;
-    this.finalScore = 0;
-    this.gameOverReason = "";
-
-    this.gameStartMs = 0;
-    this.lastSpawnMs = 0;
-    this.lastCorruptionTime = 0;
-    this.corruptionLayer = 0;         // how many layers of border corruption
-
-    // Screen shake
-    this.shakeIntensity = 0;         // current shake in pixels
-    this.shakeDuration = 0;
-    this.shakeStartMs = 0;
-
-    // DOM references (cached once)
-    this.startOverlay     = null;
-    this.gameOverOverlay  = null;
-    this.finalScoreEl     = null;
-    this.gameOverReasonEl = null;
-    this.restartBtn       = null;
-    this.openSettingsBtn  = null;
-    this.settingsOverlay  = null;
-    this.closeSettingsBtn = null;
-    this.resetControlsBtn = null;
-    this.settingsStatusEl = null;
-    this.controlLegendEl  = null;
-    this.bindButtons      = [];
-
-    this.pendingRebindAction = null;
-    this.pendingRebindButton = null;
-    this.boundCaptureRebindKey = (event) => this.captureRebindKey(event);
-
-    // z-buffer for sprite rendering (one entry per screen column)
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
-  }
-
-  // ----------------------------------------------------------
-  //  DOM wiring
-  // ----------------------------------------------------------
-  initDOM() {
-    this.startOverlay     = document.getElementById("start-overlay");
-    this.gameOverOverlay  = document.getElementById("game-over-overlay");
-    this.finalScoreEl     = document.getElementById("final-score");
-    this.gameOverReasonEl = document.getElementById("game-over-reason");
-    this.restartBtn       = document.getElementById("restart-button");
-    this.openSettingsBtn  = document.getElementById("open-settings-button");
-    this.settingsOverlay  = document.getElementById("settings-overlay");
-    this.closeSettingsBtn = document.getElementById("close-settings-button");
-    this.resetControlsBtn = document.getElementById("reset-controls-button");
-    this.settingsStatusEl = document.getElementById("settings-status");
-    this.controlLegendEl  = document.getElementById("control-legend");
-    this.bindButtons      = Array.from(document.querySelectorAll(".bind-button"));
-
-    // Restart button
-=======
 ﻿
 
 class GameManager {
@@ -89,7 +15,6 @@ class GameManager {
     this.controlLegendEl = document.getElementById("control-legend");
     this.bindButtons = Array.from(document.querySelectorAll(".bind-button"));
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     if (this.restartBtn) {
       this.restartBtn.addEventListener("click", () => this.startNewGame());
     }
@@ -110,11 +35,7 @@ class GameManager {
         resetControlBindings();
         this.refreshBindingButtons();
         this.renderControlLegend();
-<<<<<<< HEAD
-        this.setSettingsStatus("Touches réinitialisées.");
-=======
         this.setSettingsStatus("Touches reinitialisees.");
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
       });
     }
 
@@ -133,10 +54,6 @@ class GameManager {
       });
     }
 
-<<<<<<< HEAD
-    // Click on start overlay → start
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     if (this.startOverlay) {
       this.startOverlay.addEventListener("click", () => {
         if (this.isSettingsVisible()) return;
@@ -149,14 +66,6 @@ class GameManager {
     this.renderControlLegend();
   }
 
-<<<<<<< HEAD
-  requestPointerLock() {
-    const cvs = document.querySelector("canvas");
-    if (cvs && cvs.requestPointerLock) cvs.requestPointerLock();
-  }
-
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   isSettingsVisible() {
     return !!(this.settingsOverlay && this.settingsOverlay.classList.contains("visible"));
   }
@@ -199,11 +108,7 @@ class GameManager {
     this.pendingRebindButton = button;
     button.classList.add("listening");
     button.textContent = "Appuie...";
-<<<<<<< HEAD
-    this.setSettingsStatus("Appuie sur une touche (Échap pour annuler).");
-=======
     this.setSettingsStatus("Appuie sur une touche (Echap pour annuler).");
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
     window.addEventListener("keydown", this.boundCaptureRebindKey, true);
   }
@@ -216,11 +121,7 @@ class GameManager {
 
     if (event.code === "Escape") {
       this.cancelPendingRebind();
-<<<<<<< HEAD
-      this.setSettingsStatus("Modification annulée.");
-=======
       this.setSettingsStatus("Modification annulee.");
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
       this.refreshBindingButtons();
       return;
     }
@@ -248,43 +149,6 @@ class GameManager {
     this.controlLegendEl.textContent = getMovementLegendText();
   }
 
-<<<<<<< HEAD
-  onViewportResize() {
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
-  }
-
-  // ----------------------------------------------------------
-  //  Game lifecycle
-  // ----------------------------------------------------------
-  startNewGame() {
-    this.closeSettingsMenu();
-    generateWorldMap();
-
-    this.gameState = "playing";
-    this.player.resetToSpawn();
-    this.orbs = [];
-    this.particles = [];
-    this.score = 0;
-    this.finalScore = 0;
-    this.gameOverReason = "";
-    this.corruptionLayer = 0;
-    this.lastCorruptionTime = 0;
-    this.gameStartMs = millis();
-    this.lastSpawnMs = millis();
-    this.shakeIntensity = 0;
-
-    // Spawn a few starting orbs
-    for (let i = 0; i < 5; i++) this.spawnOrb();
-
-    // Hide overlays
-    if (this.startOverlay) this.startOverlay.style.display = "none";
-    if (this.gameOverOverlay) {
-      this.gameOverOverlay.classList.remove("visible");
-      this.gameOverOverlay.setAttribute("aria-hidden", "true");
-    }
-
-    this.requestPointerLock();
-=======
   drawMinimap() {
     const mmSize = 140;
     const mmX = 10;
@@ -375,7 +239,6 @@ class GameManager {
     line(cx - 8, cy, cx + 8, cy);
     line(cx, cy - 8, cx, cy + 8);
     pop();
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   }
 
   triggerGameOver(reason) {
@@ -384,10 +247,6 @@ class GameManager {
     this.finalScore = Math.floor(this.score);
     this.gameOverReason = reason;
 
-<<<<<<< HEAD
-    // Release pointer lock
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     if (document.exitPointerLock) document.exitPointerLock();
 
     if (this.gameOverOverlay) {
@@ -402,25 +261,6 @@ class GameManager {
     return max(0, (millis() - this.gameStartMs) / 1000);
   }
 
-<<<<<<< HEAD
-  // ----------------------------------------------------------
-  //  Main frame
-  // ----------------------------------------------------------
-  runFrame() {
-    const dt = min(deltaTime / 1000, 0.05);
-
-    if (this.gameState === "playing") {
-      this.updateGame(dt);
-    }
-
-    this.renderFrame();
-  }
-
-  // ----------------------------------------------------------
-  //  UPDATE
-  // ----------------------------------------------------------
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   updateGame(dt) {
     this.player.update(dt);
     this.spawnOrbsIfNeeded();
@@ -431,13 +271,6 @@ class GameManager {
     this.score += SURVIVAL_POINTS_PER_SECOND * dt;
   }
 
-<<<<<<< HEAD
-  // --- Orb spawning ---
-  spawnOrbsIfNeeded() {
-    const now = millis();
-    const elapsed = this.survivalSeconds();
-    const interval = max(ORB_SPAWN_INTERVAL_MIN_MS, ORB_SPAWN_INTERVAL_INITIAL_MS - elapsed * ORB_SPAWN_ACCEL_MS_PER_SEC);
-=======
   spawnOrbsIfNeeded() {
     const now = millis();
     const elapsed = this.survivalSeconds();
@@ -446,7 +279,6 @@ class GameManager {
       ORB_SPAWN_INTERVAL_INITIAL_MS - elapsed * ORB_SPAWN_ACCEL_MS_PER_SEC
     );
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     while (now - this.lastSpawnMs >= interval) {
       this.spawnOrb();
       this.lastSpawnMs += interval;
@@ -454,18 +286,11 @@ class GameManager {
   }
 
   spawnOrb() {
-<<<<<<< HEAD
-    // Find a random empty tile that isn't the player's tile
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     for (let attempt = 0; attempt < 50; attempt++) {
       const col = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
       const row = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
       if (worldTileMap[row][col] !== 0) continue;
-<<<<<<< HEAD
-=======
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
       const wx = col + 0.5;
       const wy = row + 0.5;
       if (Math.hypot(wx - this.player.posX, wy - this.player.posY) < 3) continue;
@@ -477,10 +302,6 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Corruption (arena shrink) ---
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   advanceCorruption() {
     const elapsed = this.survivalSeconds();
     if (elapsed < CORRUPTION_START_DELAY_SECONDS) return;
@@ -499,13 +320,6 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  /**
-   * Fills a ring of tiles at distance `layer` from the border with corruption (type 6).
-   * Layer 1 = the row/col just inside existing border, etc.
-   */
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   applyCorruptionLayer(layer) {
     const lo = layer;
     const hi = MAP_TILE_COUNT - 1 - layer;
@@ -513,10 +327,7 @@ class GameManager {
       this.triggerGameOver("The corruption consumed the entire arena.");
       return;
     }
-<<<<<<< HEAD
-=======
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     for (let col = lo; col <= hi; col++) {
       if (worldTileMap[lo][col] === 0) worldTileMap[lo][col] = 6;
       if (worldTileMap[hi][col] === 0) worldTileMap[hi][col] = 6;
@@ -527,10 +338,6 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Entity updates ---
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   updateOrbs(dt) {
     for (const orb of this.orbs) orb.update(dt, this.player);
   }
@@ -542,17 +349,6 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Collisions ---
-  handleCollisions() {
-    // Player vs corruption / wall overlap check
-    const offsets = [
-      { dx: -this.player.radius, dy: -this.player.radius },
-      { dx:  this.player.radius, dy: -this.player.radius },
-      { dx: -this.player.radius, dy:  this.player.radius },
-      { dx:  this.player.radius, dy:  this.player.radius },
-    ];
-=======
   handleCollisions() {
     const offsets = [
       { dx: -this.player.radius, dy: -this.player.radius },
@@ -561,7 +357,6 @@ class GameManager {
       { dx: this.player.radius, dy: this.player.radius },
     ];
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     for (const off of offsets) {
       const tc = Math.floor(this.player.posX + off.dx);
       const tr = Math.floor(this.player.posY + off.dy);
@@ -573,10 +368,6 @@ class GameManager {
       }
     }
 
-<<<<<<< HEAD
-    // Player vs orbs
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const orb = this.orbs[i];
       const dx = this.player.posX - orb.posX;
@@ -586,18 +377,10 @@ class GameManager {
 
       if (distSq <= combinedR * combinedR) {
         if (orb.isSafe()) {
-<<<<<<< HEAD
-          // Normal collect
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
           this.score += ORB_COLLECT_BONUS;
           this.spawnCollectParticles(orb.posX, orb.posY, [92, 255, 145]);
           this.orbs.splice(i, 1);
         } else if (orb.isWarning()) {
-<<<<<<< HEAD
-          // Risky grab during warning phase — double bonus!
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
           this.score += ORB_COLLECT_BONUS * 2;
           this.spawnCollectParticles(orb.posX, orb.posY, [255, 200, 60]);
           this.orbs.splice(i, 1);
@@ -615,9 +398,6 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Screen shake helper ---
-=======
  pushHudToast(text, colorArray = [220, 240, 255]) {
     this.hudToastText = text;
     this.hudToastColor = colorArray;
@@ -657,16 +437,16 @@ class GameManager {
     if (itemKey === "ammoPack") {
       this.recoverAmmo(MOB_DROP_AMMO_GAIN);
       this.spawnCollectParticles(this.player.posX, this.player.posY, [255, 220, 110]);
-      this.pushHudToast("Ammo pack utilisé", [255, 225, 130]);
+      this.pushHudToast("Ammo pack utilisÃ©", [255, 225, 130]);
     } else if (itemKey === "scoreShard") {
       this.score += MOB_DROP_SCORE_GAIN;
       this.spawnCollectParticles(this.player.posX, this.player.posY, [255, 255, 150]);
-      this.pushHudToast("Score shard utilisé", [255, 255, 170]);
+      this.pushHudToast("Score shard utilisÃ©", [255, 255, 170]);
     } else if (itemKey === "pulseCore") {
       const fakeModule = { type: this.randomModuleType(), posX: this.player.posX, posY: this.player.posY };
       this.activateWorldModule(fakeModule);
       this.spawnCollectParticles(this.player.posX, this.player.posY, [220, 180, 255]);
-      this.pushHudToast("Pulse core activé", [220, 180, 255]);
+      this.pushHudToast("Pulse core activÃ©", [220, 180, 255]);
     }
 
     return true;
@@ -767,7 +547,7 @@ class GameManager {
     }
 
     if (this.killStreak % KILL_STREAK_AMMO_BONUS_EVERY === 0) {
-      this.recoverAmmo(KILL_STREAK_AMMO_BONUS, "Bonus série", [255, 200, 130]);
+      this.recoverAmmo(KILL_STREAK_AMMO_BONUS, "Bonus sÃ©rie", [255, 200, 130]);
     }
   }
 
@@ -853,7 +633,7 @@ class GameManager {
 
     this.waveState = "preparing";
     this.nextWaveActionMs = millis() + WAVE_BREAK_DURATION_MS;
-    this.pushHudToast(`Vague ${this.waveNumber} nettoyée`, [145, 230, 255]);
+    this.pushHudToast(`Vague ${this.waveNumber} nettoyÃ©e`, [145, 230, 255]);
   }
 
   countAliveHunters() {
@@ -948,7 +728,7 @@ class GameManager {
 
     const now = millis();
     if (this.waveNumber < PUNCH_MACHINE_UNLOCK_WAVE) {
-      this.pushHudToast(`Punch Machine verrouillée (vague ${PUNCH_MACHINE_UNLOCK_WAVE})`, [255, 160, 160]);
+      this.pushHudToast(`Punch Machine verrouillÃ©e (vague ${PUNCH_MACHINE_UNLOCK_WAVE})`, [255, 160, 160]);
       return;
     }
 
@@ -1195,7 +975,7 @@ class GameManager {
       this.spawnCollectParticles(worldModule.posX, worldModule.posY, [190, 140, 255]);
     }
 
-    this.recoverAmmo(WORLD_MODULE_AMMO_RECOVERY, "Module recyclé en munitions", [150, 230, 255]);
+    this.recoverAmmo(WORLD_MODULE_AMMO_RECOVERY, "Module recyclÃ© en munitions", [150, 230, 255]);
     this.score += WORLD_MODULE_ACTIVATE_BONUS;
   }
 
@@ -1376,9 +1156,9 @@ class GameManager {
         }
         this.spawnCollectParticles(drop.posX, drop.posY, [220, 180, 255]);
       } else if (drop.type === "rounds") {
-        const gained = this.recoverAmmo(MOB_DROP_ROUNDS_GAIN, "Munitions récupérées", [255, 210, 130]);
+        const gained = this.recoverAmmo(MOB_DROP_ROUNDS_GAIN, "Munitions rÃ©cupÃ©rÃ©es", [255, 210, 130]);
         if (gained <= 0) {
-          this.pushHudToast("Ammo déjà max", [255, 170, 170]);
+          this.pushHudToast("Ammo dÃ©jÃ  max", [255, 170, 170]);
         }
         this.spawnCollectParticles(drop.posX, drop.posY, [255, 205, 130]);
       } else if (drop.type === "crate") {
@@ -1387,7 +1167,7 @@ class GameManager {
         const directAmmo = this.recoverAmmo(MOB_DROP_CRATE_BONUS_AMMO);
 
         if (ammoPackAdded > 0 || scoreShardAdded > 0 || directAmmo > 0) {
-          this.pushHudToast("Caisse tactique récupérée", [170, 225, 255]);
+          this.pushHudToast("Caisse tactique rÃ©cupÃ©rÃ©e", [170, 225, 255]);
         } else {
           this.pushHudToast("Caisse inutile (inventaire plein)", [255, 170, 170]);
         }
@@ -1476,7 +1256,6 @@ class GameManager {
 
 
 // Rendering/post-process methods continue in the same manager class.
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   addScreenShake(intensity, durationMs) {
     this.shakeIntensity = intensity;
     this.shakeDuration = durationMs;
@@ -1486,14 +1265,10 @@ class GameManager {
   currentShakeOffset() {
     if (this.shakeIntensity === 0) return { x: 0, y: 0 };
     const elapsed = millis() - this.shakeStartMs;
-<<<<<<< HEAD
-    if (elapsed > this.shakeDuration) { this.shakeIntensity = 0; return { x: 0, y: 0 }; }
-=======
     if (elapsed > this.shakeDuration) {
       this.shakeIntensity = 0;
       return { x: 0, y: 0 };
     }
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const factor = 1 - elapsed / this.shakeDuration;
     return {
       x: (Math.random() - 0.5) * 2 * this.shakeIntensity * factor,
@@ -1501,31 +1276,6 @@ class GameManager {
     };
   }
 
-<<<<<<< HEAD
-  // ----------------------------------------------------------
-  //  RENDER
-  // ----------------------------------------------------------
-  renderFrame() {
-    /*
-      PERFORMANCE-CRITICAL RENDER PIPELINE
-      ====================================
-      Steps :
-        1. Draw sky & floor with two fast rect() calls.
-        2. loadPixels()  — copy the canvas into the pixels[] typed array.
-        3. castAllRays()  — write textured wall columns into pixels[].
-        4. drawSpritesToBuffer() — write sprites into pixels[].
-        5. updatePixels() — push the modified array back to the canvas. (1 call!)
-        6. Draw lightweight overlays (vignette, minimap, HUD) with normal p5 shapes.
-    */
-    this.drawSkyAndFloor();
-
-    loadPixels();                // step 2
-    this.castAllRays();          // step 3
-    this.drawSpritesToBuffer();  // step 4
-    updatePixels();              // step 5
-
-    // Lightweight overlay draws
-=======
   renderFrame() {
     this.drawSkyAndFloor();
 
@@ -1534,7 +1284,6 @@ class GameManager {
     this.drawSpritesToBuffer();
     updatePixels();
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const shake = this.currentShakeOffset();
     push();
     translate(shake.x, shake.y);
@@ -1545,17 +1294,7 @@ class GameManager {
     pop();
   }
 
-<<<<<<< HEAD
-  // --- Sky & Floor ---
   drawSkyAndFloor() {
-    /*
-      Day / Night cycle:
-      Smoothly interpolate sky colour from daytime blue to midnight dark-blue.
-      A full cycle takes ~90 seconds.
-    */
-=======
-  drawSkyAndFloor() {
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const cyclePhase = (this.survivalSeconds() % 90) / 90;
     const nightFactor = (Math.sin(cyclePhase * TWO_PI - HALF_PI) + 1) / 2;
 
@@ -1575,9 +1314,6 @@ class GameManager {
     rect(0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
   }
 
-<<<<<<< HEAD
-  // --- Raycasting core (DDA algorithm) ---
-=======
   castAllRays() {
     const halfFOV = FIELD_OF_VIEW_RADIANS / 2;
 
@@ -2319,7 +2055,7 @@ class GameManager {
     return this.player.cameraVerticalOffsetPx();
   }
 
-// --- drawSkyAndFloor() — updated: horizon respects camera offset ---
+// --- drawSkyAndFloor() â€” updated: horizon respects camera offset ---
 
   drawSkyAndFloor() {
     const cyclePhase  = (this.survivalSeconds() % 90) / 90;
@@ -2344,7 +2080,7 @@ class GameManager {
     fill(floorR, floorG, floorB); rect(0, horizon, SCREEN_WIDTH, SCREEN_HEIGHT - horizon);
   }
 
-// --- drawVignette() — unchanged ---
+// --- drawVignette() â€” unchanged ---
 
   drawVignette() {
     const cx = SCREEN_WIDTH / 2;
@@ -2359,7 +2095,7 @@ class GameManager {
     }
   }
 
-// --- renderFrame() — main pipeline ---
+// --- renderFrame() â€” main pipeline ---
 
   renderFrame() {
     /*
@@ -2367,10 +2103,10 @@ class GameManager {
       ====================================
       Steps :
         1. Draw sky & floor with two fast rect() calls.
-        2. loadPixels()  — copy the canvas into the pixels[] typed array.
-        3. castAllRays()  — write textured wall columns into pixels[].
-        4. drawSpritesToBuffer() — write sprites into pixels[].
-        5. updatePixels() — push the modified array back to the canvas. (1 call!)
+        2. loadPixels()  â€” copy the canvas into the pixels[] typed array.
+        3. castAllRays()  â€” write textured wall columns into pixels[].
+        4. drawSpritesToBuffer() â€” write sprites into pixels[].
+        5. updatePixels() â€” push the modified array back to the canvas. (1 call!)
         6. Draw lightweight overlays (vignette, minimap, HUD) with normal p5 shapes.
     */
     this.drawSkyAndFloor();
@@ -2395,9 +2131,8 @@ class GameManager {
     pop();
   }
 
-// --- castAllRays() — DDA raycasting ---
+// --- castAllRays() â€” DDA raycasting ---
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   castAllRays() {
     /*
       For each screen column we cast one ray using the DDA
@@ -2406,10 +2141,7 @@ class GameManager {
       projection and sample the texture column.
     */
     const halfFOV = FIELD_OF_VIEW_RADIANS / 2;
-<<<<<<< HEAD
-=======
     const cameraOffset = this.cameraScreenOffsetPx();
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
     for (let col = 0; col < RAY_COUNT; col++) {
       const rayScreenFraction = (col / RAY_COUNT) * 2 - 1;
@@ -2493,11 +2225,7 @@ class GameManager {
 
       // --- Wall strip height ---
       const wallStripHeight = (SCREEN_HEIGHT * WALL_HEIGHT_PROJECTION_FACTOR) / perpDist;
-<<<<<<< HEAD
-      const drawStart = Math.floor((SCREEN_HEIGHT - wallStripHeight) / 2);
-=======
       const drawStart = Math.floor((SCREEN_HEIGHT - wallStripHeight) / 2 + cameraOffset);
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
       // --- Texture mapping ---
       let wallHitFraction;
@@ -2518,14 +2246,11 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-=======
-// ─── drawTexturedColumn() ────────────────────────────────────────────────────
+// â”€â”€â”€ drawTexturedColumn() â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   /**
    * Draws one vertical textured wall column directly into the canvas pixels[] array.
-   * @param {Uint8ClampedArray} texPixels — pre-cached RGBA pixel data of the block texture
+   * @param {Uint8ClampedArray} texPixels â€” pre-cached RGBA pixel data of the block texture
    */
   drawTexturedColumn(screenCol, drawStart, stripHeight, texPixels, texX, distance, hitSide) {
     const rawFog = constrain(1 - (distance / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
@@ -2550,21 +2275,13 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Sprite rendering into pixel buffer (orbs, enemies, particles) ---
-=======
-// --- drawSpritesToBuffer() — build list and sort back-to-front ---
+// --- drawSpritesToBuffer() â€” build list and sort back-to-front ---
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   drawSpritesToBuffer() {
     const allSprites = [];
 
     for (const orb of this.orbs) {
       const dist = Math.hypot(orb.posX - this.player.posX, orb.posY - this.player.posY);
-<<<<<<< HEAD
-      // Determine sprite visual type from orb state
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
       let spriteType;
       if (orb.isSafe())         spriteType = "safe";
       else if (orb.isWarning()) spriteType = "warning";
@@ -2578,8 +2295,6 @@ class GameManager {
       allSprites.push({ x: p.posX, y: p.posY, dist, type: "particle", obj: p });
     }
 
-<<<<<<< HEAD
-=======
     for (const wm of this.worldModules) {
       const dist = Math.hypot(wm.posX - this.player.posX, wm.posY - this.player.posY);
       allSprites.push({ x: wm.posX, y: wm.posY, dist, type: "world-module", obj: wm });
@@ -2618,7 +2333,6 @@ class GameManager {
       });
     }
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     // Sort back-to-front
     allSprites.sort((a, b) => b.dist - a.dist);
 
@@ -2627,11 +2341,8 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-=======
-// --- drawSingleSpriteToBuffer() — per-pixel sprite rendering ---
+// --- drawSingleSpriteToBuffer() â€” per-pixel sprite rendering ---
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   /**
    * Draws a single sprite directly into the pixels[] buffer.
    * Billboard projection with z-buffer occlusion.
@@ -2640,38 +2351,15 @@ class GameManager {
     const relX = spriteData.x - this.player.posX;
     const relY = spriteData.y - this.player.posY;
 
-<<<<<<< HEAD
-    // Camera-space transform aligned with raycaster forward vector:
-    // forward = (cos(angle), sin(angle))
-    // right   = (-sin(angle), cos(angle))
-    const cosA = Math.cos(this.player.angle);
-    const sinA = Math.sin(this.player.angle);
-    const transformX = -relX * sinA + relY * cosA; // horizontal offset (right axis)
-    const transformY =  relX * cosA + relY * sinA; // depth (forward axis)
-=======
     const cosA = Math.cos(this.player.angle);
     const sinA = Math.sin(this.player.angle);
     const transformX = -relX * sinA + relY * cosA;
     const transformY =  relX * cosA + relY * sinA;
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
     if (transformY <= 0.1) return;
 
     const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
     const spriteScreenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
-<<<<<<< HEAD
-
-    let worldSize = 0.6;
-    if (spriteData.type === "particle") worldSize = 0.15;
-    if (spriteData.type === "patrol" || spriteData.type === "chase") worldSize = 0.75;
-    if (spriteData.type === "warning") worldSize = 0.65;  // slightly bigger during warning
-    const spriteScreenSize = Math.abs((worldSize / transformY) * fovScale);
-
-    const drawStartX = Math.max(0, Math.floor(spriteScreenX - spriteScreenSize / 2));
-    const drawEndX   = Math.min(SCREEN_WIDTH, Math.floor(spriteScreenX + spriteScreenSize / 2));
-    const drawStartY = Math.max(0, Math.floor(SCREEN_HEIGHT / 2 - spriteScreenSize / 2));
-    const drawEndY   = Math.min(SCREEN_HEIGHT, Math.floor(SCREEN_HEIGHT / 2 + spriteScreenSize / 2));
-=======
     const isZombieHumanoid = spriteData.type === "patrol" || spriteData.type === "chase";
     const isCollectOrb = spriteData.type === "safe" || spriteData.type === "warning";
     const isMissionBeacon = spriteData.type === "mission-beacon";
@@ -2715,51 +2403,10 @@ class GameManager {
     }
 
     if (drawStartX >= drawEndX || drawStartY >= drawEndY) return;
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
     const rawFog = constrain(1 - (spriteData.dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
     const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
 
-<<<<<<< HEAD
-    let baseR, baseG, baseB, baseA = 255;
-    if (spriteData.type === "safe") {
-      // Gentle green pulse
-      const pulse = 0.7 + 0.3 * Math.sin(millis() * 0.006);
-      baseR = 60 * pulse;
-      baseG = 255 * pulse;
-      baseB = 100 * pulse;
-      const mp = spriteData.obj.mutationProgress();
-      // Slowly tint toward orange as mutation approaches
-      baseR = lerp(baseR, 255, mp * 0.5);
-      baseG = lerp(baseG, 180, mp * 0.3);
-    } else if (spriteData.type === "warning") {
-      // Fast flashing orange → red — unmistakable danger signal
-      const wp = spriteData.obj.warningProgress();
-      const flash = Math.sin(millis() * 0.025) > 0 ? 1 : 0.4;
-      baseR = lerp(255, 255, wp) * flash;
-      baseG = lerp(180, 40, wp) * flash;
-      baseB = 30 * flash;
-    } else if (spriteData.type === "patrol") {
-      // Dim red — wandering, not yet aggressive
-      const pulse = 0.6 + 0.15 * Math.sin(millis() * 0.005);
-      baseR = 200 * pulse;
-      baseG = 60 * pulse;
-      baseB = 60 * pulse;
-    } else if (spriteData.type === "chase") {
-      // Bright pulsing red — actively chasing
-      const pulse = 0.8 + 0.2 * Math.sin(millis() * 0.015);
-      // Extra flash during charge attack
-      const isCharging = spriteData.obj.chargeActive;
-      baseR = (isCharging ? 255 : 240) * pulse;
-      baseG = (isCharging ? 100 : 40) * pulse;
-      baseB = isCharging ? 30 : 40;
-    } else if (spriteData.type === "particle") {
-      const p = spriteData.obj;
-      baseR = p.colorArray[0];
-      baseG = p.colorArray[1];
-      baseB = p.colorArray[2];
-      baseA = p.opacity();
-=======
     let baseR = 0;
     let baseG = 0;
     let baseB = 0;
@@ -2844,20 +2491,11 @@ class GameManager {
         baseB = p.colorArray[2];
         baseA = p.opacity();
       }
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     }
 
     const finalR = baseR * fogFactor;
     const finalG = baseG * fogFactor;
     const finalB = baseB * fogFactor;
-<<<<<<< HEAD
-    const invSize = 1 / spriteScreenSize;
-    const alphaFrac = baseA / 255;
-    const invAlpha  = 1 - alphaFrac;
-
-    for (let sx = drawStartX; sx < drawEndX; sx++) {
-      if (transformY >= this.zBuffer[sx]) continue;
-=======
     const invSize = 1 / Math.max(spriteScreenW, spriteScreenH);
     const alphaFrac = baseA / 255;
     const invAlpha = 1 - alphaFrac;
@@ -2892,17 +2530,10 @@ class GameManager {
       if (isCollectOrb) {
         orbTx = Math.min(orbTexW - 1, Math.floor((sx - drawStartX) * orbStepX));
       }
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 
       for (let sy = drawStartY; sy < drawEndY; sy++) {
         const fracX = (sx - drawStartX) * invSize - 0.5;
         const fracY = (sy - drawStartY) * invSize - 0.5;
-<<<<<<< HEAD
-        if (fracX * fracX + fracY * fracY > 0.2) continue;
-
-        const dstIdx = 4 * (sy * SCREEN_WIDTH + sx);
-
-=======
         const dstIdx = 4 * (sy * SCREEN_WIDTH + sx);
 
         if (isZombieHumanoid) {
@@ -2946,7 +2577,6 @@ class GameManager {
 
         if (!isMissionBeacon && !isExtractionPortal && !isPunchMachine && fracX * fracX + fracY * fracY > 0.2) continue;
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
         if (alphaFrac >= 0.98) {
           pixels[dstIdx]     = finalR;
           pixels[dstIdx + 1] = finalG;
@@ -2960,124 +2590,7 @@ class GameManager {
     }
   }
 
-<<<<<<< HEAD
-  // --- Vignette overlay (torch light) ---
-  drawVignette() {
-    const cx = SCREEN_WIDTH / 2;
-    const cy = SCREEN_HEIGHT / 2;
-    const maxR = Math.hypot(cx, cy);
-
-    noStroke();
-    for (let ring = 3; ring >= 1; ring--) {
-      const frac = ring / 3;
-      const alpha = frac * frac * 40;
-      fill(0, 0, 0, alpha);
-      ellipse(cx, cy, maxR * 2 * (0.65 + frac * 0.35), maxR * 2 * (0.65 + frac * 0.35));
-    }
-  }
-
-  // --- Minimap ---
-  drawMinimap() {
-    const mmSize = 140;
-    const mmX = 10;
-    const mmY = SCREEN_HEIGHT - mmSize - 10;
-    const tilePixels = mmSize / MAP_TILE_COUNT;
-
-    push();
-    fill(0, 0, 0, 160);
-    noStroke();
-    rect(mmX, mmY, mmSize, mmSize, 4);
-
-    // Tiles
-    for (let row = 0; row < MAP_TILE_COUNT; row++) {
-      for (let col = 0; col < MAP_TILE_COUNT; col++) {
-        const t = worldTileMap[row][col];
-        if (t === 0) continue;
-        switch (t) {
-          case 1: fill(130, 130, 130, 200); break;
-          case 2: fill(134, 96, 67, 200); break;
-          case 3: fill(76, 155, 60, 200); break;
-          case 4: fill(90, 130, 90, 200); break;
-          case 5: fill(220, 195, 100, 200); break;
-          case 6: fill(180, 30, 30, 220); break;
-          default: fill(100, 100, 100, 200);
-        }
-        rect(mmX + col * tilePixels, mmY + row * tilePixels, tilePixels + 0.5, tilePixels + 0.5);
-      }
-    }
-
-    // Orbs / enemies (colour reflects state)
-    for (const orb of this.orbs) {
-      let col;
-      if (orb.isSafe())          col = color(80, 255, 120);
-      else if (orb.isWarning())  col = color(255, 180, 40);    // orange flash
-      else if (orb.isChasing())  col = color(255, 50, 50);     // bright red
-      else                       col = color(180, 70, 70);     // dim red patrol
-      fill(col);
-      const ox = mmX + orb.posX * tilePixels;
-      const oy = mmY + orb.posY * tilePixels;
-      circle(ox, oy, 3);
-    }
-
-    // Player
-    const px = mmX + this.player.posX * tilePixels;
-    const py = mmY + this.player.posY * tilePixels;
-    fill(100, 180, 255);
-    circle(px, py, 5);
-
-    // Direction arrow
-    stroke(100, 180, 255);
-    strokeWeight(1.5);
-    const arrowLen = 8;
-    line(px, py, px + Math.cos(this.player.angle) * arrowLen, py + Math.sin(this.player.angle) * arrowLen);
-
-    pop();
-  }
-
-  // --- HUD ---
-  drawHUD() {
-    push();
-    textFont("Courier New");
-    fill(230, 240, 255);
-    noStroke();
-    textSize(18);
-    textAlign(LEFT, TOP);
-    text("SCORE: " + Math.floor(this.score), 14, 14);
-    text("TIME: " + this.survivalSeconds().toFixed(1) + "s", 14, 38);
-
-    const safeCount    = this.orbs.filter(o => o.isSafe() || o.isWarning()).length;
-    const hunterCount   = this.orbs.filter(o => o.isHunter()).length;
-
-    textAlign(RIGHT, TOP);
-    fill(92, 255, 145);
-    text("ORBS: " + safeCount, SCREEN_WIDTH - 14, 14);
-    fill(255, 80, 80);
-    text("HUNTERS: " + hunterCount, SCREEN_WIDTH - 14, 38);
-
-    // Corruption warning
-    if (this.corruptionLayer > 0) {
-      textAlign(CENTER, TOP);
-      fill(255, 50, 50, 160 + 90 * Math.sin(millis() * 0.005));
-      textSize(14);
-      text("⚠ CORRUPTION LAYER " + this.corruptionLayer, SCREEN_WIDTH / 2, 14);
-    }
-    pop();
-  }
-
-  // --- Crosshair ---
-  drawCrosshair() {
-    push();
-    stroke(255, 255, 255, 140);
-    strokeWeight(1.5);
-    const cx = SCREEN_WIDTH / 2;
-    const cy = SCREEN_HEIGHT / 2;
-    line(cx - 8, cy, cx + 8, cy);
-    line(cx, cy - 8, cx, cy + 8);
-    pop();
-  }
-}
-=======
-// --- resolveZombie* — animation helpers ---
+// --- resolveZombie* â€” animation helpers ---
 
   resolveZombieTextureForSprite(spriteData) {
     const variant   = this.resolveZombieAnimationVariant(spriteData);
@@ -3279,7 +2792,7 @@ constructor() {
     if (this.pendingRebindAction) {
       this.cancelPendingRebind();
       this.refreshBindingButtons();
-      this.setSettingsStatus("Modification annulée.");
+      this.setSettingsStatus("Modification annulÃ©e.");
       return;
     }
 
@@ -3627,7 +3140,7 @@ constructor() {
       spawnMs: millis(),
     };
 
-    this.pushHudToast("Extraction prête: rejoins la faille !", [150, 255, 200]);
+    this.pushHudToast("Extraction prÃªte: rejoins la faille !", [150, 255, 200]);
     this.addScreenShake(3.5, 280);
     this.spawnCollectParticles(pos.x, pos.y, [130, 255, 200]);
   }
@@ -3876,13 +3389,13 @@ constructor() {
       beacon.activated = true;
       this.beaconsActivated += 1;
       this.score += MISSION_BEACON_SCORE_BONUS;
-      this.recoverAmmo(MISSION_BEACON_AMMO_RECOVERY, "Balise synchronisée", [120, 245, 210]);
+      this.recoverAmmo(MISSION_BEACON_AMMO_RECOVERY, "Balise synchronisÃ©e", [120, 245, 210]);
       this.spawnCollectParticles(beacon.posX, beacon.posY, [120, 245, 210]);
       this.addScreenShake(2.4, 180);
 
       const totalBeacons = this.missionBeacons.length;
       if (this.beaconsActivated < totalBeacons) {
-        this.pushHudToast(`Balise ${this.beaconsActivated}/${totalBeacons} activée`, [135, 250, 220]);
+        this.pushHudToast(`Balise ${this.beaconsActivated}/${totalBeacons} activÃ©e`, [135, 250, 220]);
       } else {
         this.score += EXTRACTION_PORTAL_SCORE_BONUS;
         this.spawnExtractionPortal();
@@ -3896,7 +3409,7 @@ constructor() {
     const distSq = dx * dx + dy * dy;
     const combinedR = this.player.radius + this.extractionPortal.radius;
     if (distSq <= combinedR * combinedR) {
-      this.triggerVictory("Toutes les balises sont sécurisées. Extraction réussie.");
+      this.triggerVictory("Toutes les balises sont sÃ©curisÃ©es. Extraction rÃ©ussie.");
     }
   }
 
@@ -3993,4 +3506,3 @@ function preloadZombieSkinTexture() {
     }
   );
 }
->>>>>>> 849054761324ace091cb613435baa7cbd0695970

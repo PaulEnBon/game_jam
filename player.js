@@ -1,11 +1,5 @@
-/*
-<<<<<<< HEAD
-  ============================================================
-  PLAYER CLASS  (first-person camera)
-  ============================================================
-=======
+﻿/*
  - keybinding UI (affichage + remapping)
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 */
 
 const CONTROL_STORAGE_KEY = "betrayal-box-keybinds";
@@ -28,23 +22,6 @@ const DEFAULT_KEY_BINDINGS = Object.freeze({
 
 let controlBindings = loadControlBindings();
 
-<<<<<<< HEAD
-const pressedKeyCodes = new Set();
-
-window.addEventListener("keydown", (event) => {
-  pressedKeyCodes.add(event.code);
-});
-
-window.addEventListener("keyup", (event) => {
-  pressedKeyCodes.delete(event.code);
-});
-
-window.addEventListener("blur", () => {
-  pressedKeyCodes.clear();
-});
-
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 function loadControlBindings() {
   const fallback = { ...DEFAULT_KEY_BINDINGS };
   try {
@@ -74,15 +51,6 @@ function saveControlBindings() {
   }
 }
 
-<<<<<<< HEAD
-function isControlPressed(action) {
-  const code = controlBindings[action];
-  if (!code) return false;
-  return pressedKeyCodes.has(code);
-}
-
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
 function getControlBinding(action) {
   return controlBindings[action] || DEFAULT_KEY_BINDINGS[action];
 }
@@ -100,11 +68,7 @@ function setControlBinding(action, code) {
   }
 
   if (code === "Escape" || code === "Tab") {
-<<<<<<< HEAD
-    return { ok: false, message: "Cette touche est réservée." };
-=======
     return { ok: false, message: "Cette touche est reservee." };
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   }
 
   const duplicateAction = CONTROL_ACTIONS.find(
@@ -114,11 +78,7 @@ function setControlBinding(action, code) {
   if (duplicateAction) {
     return {
       ok: false,
-<<<<<<< HEAD
-      message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise déjà ${getDisplayKeyName(code)}.`,
-=======
       message: `${CONTROL_ACTION_LABELS[duplicateAction]} utilise deja ${getDisplayKeyName(code)}.`,
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     };
   }
 
@@ -137,17 +97,10 @@ function resetControlBindings() {
 
 function getDisplayKeyName(code) {
   const aliases = {
-<<<<<<< HEAD
-    ArrowUp: "↑",
-    ArrowDown: "↓",
-    ArrowLeft: "←",
-    ArrowRight: "→",
-=======
     ArrowUp: "^",
     ArrowDown: "v",
     ArrowLeft: "<",
     ArrowRight: ">",
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     Space: "Espace",
     ShiftLeft: "Shift",
     ShiftRight: "Shift",
@@ -170,57 +123,6 @@ function getMovementLegendText() {
   const left = getDisplayKeyName(getControlBinding("left"));
   const backward = getDisplayKeyName(getControlBinding("backward"));
   const right = getDisplayKeyName(getControlBinding("right"));
-<<<<<<< HEAD
-  return `${forward}${left}${backward}${right} — Move | Mouse — Look | Walk over green orbs to collect`;
-}
-
-class Player {
-  /**
-   * @param {number} startX - tile-space X (e.g. 12.5 for centre of tile 12)
-   * @param {number} startY - tile-space Y
-   */
-  constructor(startX, startY) {
-    this.posX = startX;
-    this.posY = startY;
-    this.angle = 0;                             // radians, 0 = facing +X
-    this.moveSpeed = PLAYER_MOVE_SPEED;
-    this.radius = PLAYER_RADIUS;
-  }
-
-  /** Reset position and angle for a new game. */
-  resetToSpawn() {
-    this.posX = MAP_TILE_COUNT / 2 + 0.5;
-    this.posY = MAP_TILE_COUNT / 2 + 0.5;
-    this.angle = 0;
-  }
-
-  /**
-   * Process WASD / Arrow key movement, frame-rate independent.
-   * Uses **wall sliding** collision : we attempt X and Y movement
-   * separately so the player slides along walls instead of sticking.
-   */
-  update(deltaSeconds) {
-    // --- Keyboard input ---
-    let forwardInput = 0;
-    let strafeInput  = 0;
-
-    if (isControlPressed("forward"))  forwardInput += 1;
-    if (isControlPressed("backward")) forwardInput -= 1;
-    if (isControlPressed("left"))     strafeInput  -= 1;
-    if (isControlPressed("right"))    strafeInput  += 1;
-
-    // --- Calculate forward and strafe direction vectors ---
-    const forwardX = Math.cos(this.angle);
-    const forwardY = Math.sin(this.angle);
-    const strafeX  = -Math.sin(this.angle);   // perpendicular right
-    const strafeY  =  Math.cos(this.angle);
-
-    // Combined movement vector
-    let moveX = forwardInput * forwardX + strafeInput * strafeX;
-    let moveY = forwardInput * forwardY + strafeInput * strafeY;
-
-    // Normalise so diagonal movement isn't faster
-=======
   return `${forward}${left}${backward}${right} - Move | Mouse - Look | Walk over green orbs to collect`;
 }
 
@@ -275,66 +177,23 @@ class Player {
     let moveX = forwardInput * forwardX + strafeInput * strafeX;
     let moveY = forwardInput * forwardY + strafeInput * strafeY;
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const moveMagnitude = Math.hypot(moveX, moveY);
     if (moveMagnitude > 0) {
       moveX = (moveX / moveMagnitude) * this.moveSpeed * deltaSeconds;
       moveY = (moveY / moveMagnitude) * this.moveSpeed * deltaSeconds;
     }
 
-<<<<<<< HEAD
-    // --- Wall-sliding collision ---
-    // Try X movement alone
-=======
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const newX = this.posX + moveX;
     if (!isWorldBlocked(newX, this.posY, this.radius)) {
       this.posX = newX;
     }
-<<<<<<< HEAD
-    // Try Y movement alone
-=======
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
     const newY = this.posY + moveY;
     if (!isWorldBlocked(this.posX, newY, this.radius)) {
       this.posY = newY;
     }
   }
 
-<<<<<<< HEAD
-  /**
-   * Rotate the camera based on mouse movement (pointer lock delta).
-   * Called from the mouseMoved() p5 callback.
-   */
-  rotateByMouseDelta(deltaX) {
-    this.angle += deltaX * PLAYER_ROTATE_SPEED;
-  }
-}
-
-/**
- * Checks if a circle at (cx, cy) with given radius overlaps any solid tile.
- * We test the 4 corner points of the circle's bounding box.
- * This is a simplified but robust approach for grid-based maps.
- */
-function isWorldBlocked(cx, cy, radius) {
-  const offsets = [
-    { dx: -radius, dy: -radius },
-    { dx:  radius, dy: -radius },
-    { dx: -radius, dy:  radius },
-    { dx:  radius, dy:  radius },
-  ];
-  for (const off of offsets) {
-    const tileCol = Math.floor(cx + off.dx);
-    const tileRow = Math.floor(cy + off.dy);
-    if (tileCol < 0 || tileCol >= MAP_TILE_COUNT || tileRow < 0 || tileRow >= MAP_TILE_COUNT) {
-      return true; // out of bounds = blocked
-    }
-    if (worldTileMap[tileRow][tileCol] !== 0) {
-      return true; // solid block
-    }
-  }
-=======
   rotateByMouseDelta(deltaX) {
     this.lookByMouseDelta(deltaX, 0);
   }
@@ -386,6 +245,5 @@ function isWorldBlocked(cx, cy, radius) {
     }
   }
 
->>>>>>> 849054761324ace091cb613435baa7cbd0695970
   return false;
 }
