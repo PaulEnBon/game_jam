@@ -69,7 +69,8 @@ canvas {
 }
 
 #start-button,
-#open-settings-button {
+#open-settings-button,
+#open-localhost-button {
   margin-top: 8px;
   border: 2px solid #8896c0;
   border-radius: 4px;
@@ -83,7 +84,8 @@ canvas {
 }
 
 #start-button:hover,
-#open-settings-button:hover {
+#open-settings-button:hover,
+#open-localhost-button:hover {
   border-color: #7dff8a;
   color: #7dff8a;
   background: rgba(125, 255, 138, 0.08);

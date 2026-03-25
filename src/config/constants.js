@@ -20,20 +20,30 @@ const TEXTURE_SIZE = 32;             // 32 × 32 pixel textures (blocky look)
 
 // --- Raycaster ---
 const FIELD_OF_VIEW_RADIANS       = Math.PI / 3;   // 60° horizontal FOV
-let RAY_COUNT                     = SCREEN_WIDTH;   // one ray per screen column
+let RAY_COUNT                     = Math.min(SCREEN_WIDTH, 640);   // max 640 rays for perf, less on small screens
 const MAX_RAY_DISTANCE            = 78;
 const WALL_HEIGHT_PROJECTION_FACTOR = 1.0;
 
 function updateViewportSize() {
   SCREEN_WIDTH = window.innerWidth;
   SCREEN_HEIGHT = window.innerHeight;
-  RAY_COUNT = SCREEN_WIDTH;
+  RAY_COUNT = Math.min(SCREEN_WIDTH, 640);  // capped at 640 rays max
 }
 
 // --- Lighting / Fog (tweak these to adjust brightness) ---
 const FOG_DENSITY                 = 0.55;  // 0 = no fog, 1 = pitch-black at max dist
 const AMBIENT_LIGHT_MINIMUM       = 0.22;  // even the farthest walls keep 22 % brightness
 const SIDE_SHADE_FACTOR           = 0.85;  // Y-side walls slightly darker (was 0.75)
+
+// --- Horror Fog / Visibility System ---
+const FOG_DISTANCE_START          = 8;     // Distance where fog begins (in tiles)
+const FOG_DISTANCE_END            = 10;    // Distance where fog becomes complete black
+const FOG_COLOR_RGB              = [0, 0, 0];  // Pure black fog (horror style)
+
+// --- 3D Fog Shader Parameters (for WEBGL 3D mode) ---
+const FOG_3D_START_DISTANCE       = 8.0;   // Brouillard commence à 8 blocs du joueur
+const FOG_3D_DENSITY              = 0.25;  // Densité exponentielle (0.1-0.4, plus élevé = plus rapide)
+const FOG_3D_ENABLED              = true;  // Active/désactive le shader de brouillard 3D
 
 // --- Motion blur ---
 const MOTION_BLUR_ENABLED       = true;
@@ -49,13 +59,13 @@ const MOTION_BLUR_CAPTURE_STEP  = 2;
 const PLAYER_MOVE_SPEED   = 3.6;    // tiles per second
 const PLAYER_ROTATE_SPEED = 0.003;  // radians per mouse-pixel
 const PLAYER_PITCH_SPEED  = 0.0022; // vertical look sensitivity
-const PLAYER_MAX_PITCH    = 0.78;   // ~45°
+const PLAYER_MAX_PITCH    = 1.2;    // ~69° (increased to look down more)
 const PLAYER_RADIUS       = 0.25;   // collision cylinder radius
 const PLAYER_JUMP_VELOCITY = 5.2;
 const PLAYER_GRAVITY       = 14.5;
 
 // Camera vertical projection helpers
-const CAMERA_PITCH_PIXEL_RATIO = 0.40; // multiplied by screen height
+const CAMERA_PITCH_PIXEL_RATIO = 0.50; // multiplied by screen height (increased for better downward view)
 const CAMERA_JUMP_PIXEL_RATIO  = 0.22; // multiplied by screen height
 
 // --- Weapon ---
@@ -98,7 +108,7 @@ const VIEWMODEL_RECOIL_PX   = 18;
 
 // --- Orbs / Enemies ---
 const ORB_WORLD_RADIUS     = 0.3;
-const ENEMY_WORLD_RADIUS   = 0.35;
+const ENEMY_WORLD_RADIUS   = 0.60;  // Covers arms at ±0.24 + width 0.08 + animation margin
 const MIN_MUTATION_DELAY_MS = 4500;
 const MAX_MUTATION_DELAY_MS = 7000;
 const ENEMY_BASE_SPEED      = 1.6;
@@ -117,11 +127,9 @@ const HUNTER_CHARGE_COOLDOWN_MS = 3000;   // ms between charges
 // --- Zombie sprite sheet animation ---
 const ZOMBIE_SPRITE_SHEET_FRAME_COUNT = 6;
 const ZOMBIE_SPRITE_SHEET_FPS = 10;
-const ZOMBIE_SPRITESHEET_PATH = "assets/textures/zombie.png";
 const ZOMBIE_ATTACK_DISTANCE = 0.95;
 const ZOMBIE_ANIM_SPEED_MIN = 0.7;
 const ZOMBIE_ANIM_SPEED_MAX = 2.2;
-const ZOMBIE_USE_EXTERNAL_SPRITESHEET = true;
 const ZOMBIE_SIDE_TURN_THRESHOLD = 0.35;
 const ZOMBIE_HEAD_TURN_PIXELS = 2;
 
@@ -211,7 +219,7 @@ const MODULE_CHRONO_SPAWN_SLOW_FACTOR = 1.8;
 const MODULE_CHRONO_HUNTER_TIME_SCALE = 0.55;
 
 // --- Hunter lava avoidance ---
-const LAVA_AVOID_DISTANCE_TILES = 2.1;
+const LAVA_AVOID_DISTANCE_TILES = 1.0;  // Reduced from 2.1 for performance
 const LAVA_AVOID_PUSH_FORCE     = 2.8;
 const LAVA_CENTER_PULL_FORCE    = 0.9;
 const HUNTER_LAVA_TELEPORT_MIN_DISTANCE = 6.5;

@@ -10,40 +10,122 @@
 */
 
 window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
-window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = null;
+window.PRELOADED_ZOMBIE_SKIN_PIXELS = null;
 
 function preloadZombieSkinTexture() {
-  const zombieSpriteSheetPath =
-    (typeof window !== "undefined" && typeof window.EMBEDDED_ZOMBIE_WALK_DATA_URI === "string")
-      ? window.EMBEDDED_ZOMBIE_WALK_DATA_URI
-      : ZOMBIE_SPRITESHEET_PATH;
-
-  const zombieSkinPath =
-    (typeof window !== "undefined" && typeof window.EMBEDDED_ZOMBIE_SKIN_DATA_URI === "string")
-      ? window.EMBEDDED_ZOMBIE_SKIN_DATA_URI
-      : "assets/textures/zombie.png";
-
-  window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = loadImage(
-    zombieSpriteSheetPath,
-    undefined,
-    () => {
-      window.PRELOADED_ZOMBIE_SPRITESHEET_IMAGE = null;
+  // Load Zombie texture from embedded base64 data or external file
+  // En mode fichier (file://), ou si Zombie.png n'existe pas, utilise les données embedded
+  
+  try {
+    // First, try to load from external file (if on localhost server)
+    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+      console.log("ℹ️  Attempting to load Zombie.png from server...");
+      window.PRELOADED_ZOMBIE_SKIN_IMAGE = loadImage(
+        'Zombie.png',
+        () => {
+          // Une fois chargée, extrais tous les pixels en mémoire pour accès rapide
+          const img = window.PRELOADED_ZOMBIE_SKIN_IMAGE;
+          img.loadPixels();
+          window.PRELOADED_ZOMBIE_SKIN_PIXELS = new Uint8Array(img.pixels);
+          img.updatePixels();
+          console.log("✓ Zombie PNG chargé depuis serveur (64×64) - texture prête pour 3D");
+        },
+        (err) => {
+          console.warn("⚠️  Zombie.png non trouvé sur serveur, utilisation fallback embedded:", err);
+          loadZombieTextureFromEmbedded();
+        }
+      );
+    } else {
+      console.log("ℹ️  Running via file:// protocol - loading embedded zombie texture");
+      loadZombieTextureFromEmbedded();
     }
-  );
+  } catch (err) {
+    console.warn("⚠️  Zombie texture loading error:", err);
+    loadZombieTextureFromEmbedded();
+  }
+}
 
-  window.PRELOADED_ZOMBIE_SKIN_IMAGE = loadImage(
-    zombieSkinPath,
-    undefined,
-    () => {
-      window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
-      console.warn("Zombie skin texture failed to load:", zombieSkinPath);
-    }
-  );
+function loadZombieTextureFromEmbedded() {
+  // Charge la texture depuis les données embedded base64
+  if (!window.EMBEDDED_ZOMBIE_SKIN_DATA_URI) {
+    console.warn("❌ Embedded zombie texture data not available");
+    window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
+    return;
+  }
+  
+  try {
+    // Use p5.js loadImage with the data URI
+    window.PRELOADED_ZOMBIE_SKIN_IMAGE = loadImage(
+      window.EMBEDDED_ZOMBIE_SKIN_DATA_URI,
+      () => {
+        // Image loaded successfully
+        const img = window.PRELOADED_ZOMBIE_SKIN_IMAGE;
+        if (img && img.width > 0) {
+          img.loadPixels();
+          window.PRELOADED_ZOMBIE_SKIN_PIXELS = new Uint8Array(img.pixels);
+          img.updatePixels();
+          console.log("✓ Zombie texture chargé depuis embedded base64 (64×64) - texture prête pour 3D");
+        }
+      },
+      (err) => {
+        console.error("❌ Failed to load embedded zombie texture:", err);
+        window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
+      }
+    );
+  } catch (err) {
+    console.error("❌ Error loading embedded zombie texture:", err);
+    window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
+  }
+}
+
+/**
+ * Draws a sharp cubic block in 3D WEBGL mode
+ * Uses box() with minimal detail for crisp edges
+ */
+function drawSharpBox(g, w = 1, h = 1, d = 1, color = null) {
+  const ctx = g || globalThis;
+  
+  if (color) ctx.fill(color);
+  
+  // box(width, height, depth, detailX, detailY)
+  // detailX and detailY control tessellation - 1 = no extra faces
+  ctx.box(w, h, d, 1, 1);
+}
+
+// Minecraft-style block - single solid cube
+function drawMinecraftBlock(g, blockType, nightFactor = 0) {
+  g.noStroke();
+  
+  // Colors per block type
+  const colorMap = {
+    1: { main: [128, 128, 128] },      // Stone
+    2: { main: [139, 90, 43] },         // Dirt
+    3: { main: [107, 142, 35] },        // Grass (green)
+    4: { main: [100, 100, 100] },       // Mossy cobble
+    5: { main: [255, 255, 150] },       // Glowstone
+    6: { main: [255, 140, 0] },         // Lava
+    7: { main: [139, 69, 19] },         // Plank
+    8: { main: [34, 139, 34] },         // Leaves
+    9: { main: [16, 16, 16] },          // Obsidian
+    10: { main: [210, 180, 140] },      // Tan plank
+    11: { main: [20, 20, 20] }          // Dark obsidian
+  };
+  
+  const colors = colorMap[blockType] || colorMap[2];
+  const lightMult = 1.0 - (nightFactor * 0.3);
+  
+  const r = colors.main[0] * lightMult;
+  const c = colors.main[1] * lightMult;
+  const b = colors.main[2] * lightMult;
+  
+  g.fill(r, c, b);
+  g.box(1, 1, 1, 1, 1);  // Single 1×1×1 cube
 }
 
 class GameManager {
   constructor() {
     this.gameState = "waiting";  // "waiting" | "playing" | "paused" | "game-over"
+    console.log("🎮 GameManager initialized - state: waiting");
     this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
     this.orbs = [];
     this.particles = [];
@@ -141,9 +223,26 @@ class GameManager {
     this.canvasEl = null;
 
     // z-buffer for sprite rendering (one entry per screen column)
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+    this.zBuffer = new Float32Array(RAY_COUNT);
+    this.rayDirXBuffer = new Float32Array(RAY_COUNT);
+    this.rayDirYBuffer = new Float32Array(RAY_COUNT);
     this.zombieSpriteCache = this.createZombieSpriteCache();
     this.collectOrbSpriteCache = this.createCollectOrbSpriteCache();
+    
+    // 3D Scene Manager (NEW)
+    this.scene3D = new Zombie3DSceneManager();
+    this.scene3D.init(window.PRELOADED_ZOMBIE_SKIN_IMAGE);
+    // Détecter le protocole: 3D sur localhost, 2D sur fichier
+    const isLocalhost = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+    this.use3DMode = false;  // Désactivé par défaut (activé au startNewGame selon protocole)
+    this.isLocalhostServer = isLocalhost;  // Pour endGame/restart
+    this.webglGraphics = null;  // p5.Renderer for WEBGL mode
+    console.log("🎮 GameManager init - Protocol:", window.location.protocol, "isLocalhost:", isLocalhost);
+    
+    // Initialize rendering mode classes
+    this.gameMode2D = new Game2DMode(this);
+    this.gameMode3D = new Game3DMode(this);
+    
     this.motionBlurEnabled = MOTION_BLUR_ENABLED;
     this.motionBlurBuffer = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
     this.motionBlurAmount = 0;
@@ -151,6 +250,179 @@ class GameManager {
     this.prevPlayerPosX = this.player.posX;
     this.prevPlayerPosY = this.player.posY;
     this.prevPlayerAngle = this.player.angle;
+    
+    // Floor texture for 3D mode
+    this.floorTexture = null;
+    this.initFloorTexture();
+  }
+  
+  // Load or create a floor texture
+  initFloorTexture() {
+    // Texture will be created on first use (lazy loading)
+    // when p5.js context is fully available
+    this.floorTextureNeedsInit = true;
+    
+    // Try to load saved texture from localStorage first
+    // Force clear old textures to regenerate
+    localStorage.removeItem('floor_texture_base64');
+    this.loadFloorTextureFromStorage();
+  }
+  
+  // Load floor texture from localStorage (persistent across sessions)
+  loadFloorTextureFromStorage() {
+    try {
+      const savedTextureData = localStorage.getItem('floor_texture_base64');
+      if (savedTextureData) {
+        const img = new Image();
+        img.onload = () => {
+          // Only use saved texture if it's the correct small size (32x32)
+          if (img.width === 32 && img.height === 32) {
+            this.setFloorTextureFromImage(img);
+            console.log('✅ Floor texture loaded from saved data');
+          } else {
+            // Old texture detected, regenerate new one
+            console.log('⚠️ Old texture format detected, regenerating...');
+            localStorage.removeItem('floor_texture_base64');
+            this.floorTextureNeedsInit = true;
+          }
+        };
+        img.onerror = () => {
+          console.warn('Saved floor texture corrupted, will create default');
+          localStorage.removeItem('floor_texture_base64');
+          this.floorTextureNeedsInit = true;
+        };
+        img.src = savedTextureData;
+      }
+    } catch (e) {
+      console.warn('Could not load saved floor texture:', e);
+    }
+  }
+  
+  // Save floor texture to localStorage for next session
+  saveFloorTextureToStorage() {
+    if (!this.floorTexture) return;
+    
+    try {
+      let canvasToSave = null;
+      
+      // Handle p5.Image
+      if (this.floorTexture.canvas) {
+        canvasToSave = this.floorTexture.canvas;
+      } 
+      // Handle native canvas
+      else if (this.floorTexture instanceof HTMLCanvasElement) {
+        canvasToSave = this.floorTexture;
+      }
+      
+      if (canvasToSave) {
+        const dataUrl = canvasToSave.toDataURL('image/png');
+        localStorage.setItem('floor_texture_base64', dataUrl);
+        console.log('✅ Floor texture saved for next session');
+      } else {
+        console.warn('⚠️ Could not save texture (unsupported format)');
+      }
+    } catch (e) {
+      console.warn('Could not save floor texture:', e);
+    }
+  }
+  
+  // Create floor texture if not already created
+  ensureFloorTextureCreated() {
+    if (this.floorTexture) {
+      return;  // Already created
+    }
+    
+    try {
+      console.log('Creating floor texture...');
+      // Create a small repeating texture the size of one tile block
+      // This will repeat across the entire floor
+      const textureSize = 32;  // Size of one block
+      
+      // Create canvas for texture
+      const canvas = document.createElement('canvas');
+      canvas.width = textureSize;
+      canvas.height = textureSize;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        console.error('Could not get canvas context');
+        return;
+      }
+      
+      // Draw checkerboard pattern: green and tan
+      const halfSize = textureSize / 2;
+      
+      // Top-left: green
+      ctx.fillStyle = 'rgb(118, 140, 78)';
+      ctx.fillRect(0, 0, halfSize, halfSize);
+      
+      // Top-right: tan
+      ctx.fillStyle = 'rgb(140, 115, 78)';
+      ctx.fillRect(halfSize, 0, halfSize, halfSize);
+      
+      // Bottom-left: tan
+      ctx.fillStyle = 'rgb(140, 115, 78)';
+      ctx.fillRect(0, halfSize, halfSize, halfSize);
+      
+      // Bottom-right: green
+      ctx.fillStyle = 'rgb(118, 140, 78)';
+      ctx.fillRect(halfSize, halfSize, halfSize, halfSize);
+      
+      // Convert canvas to p5.Image
+      let img = createImage(textureSize, textureSize);
+      img.canvas.getContext('2d').drawImage(canvas, 0, 0);
+      
+      this.floorTexture = img;
+      console.log('✅ Block-sized floor texture created (32x32)');
+      console.log('Texture object:', this.floorTexture);
+    } catch (e) {
+      console.error('❌ Could not create floor texture:', e);
+    }
+  }
+  
+  // Public method to set floor texture from external image
+  setFloorTextureFromImage(imgElement) {
+    if (!imgElement) {
+      console.error('❌ No image element provided');
+      return;
+    }
+    
+    console.log('🔄 Setting floor texture from image...');
+    
+    try {
+      // Check if image has valid dimensions
+      if (!imgElement.width || !imgElement.height) {
+        console.error('❌ Image has invalid dimensions:', imgElement.width, imgElement.height);
+        return;
+      }
+      
+      console.log(`📐 Image dimensions: ${imgElement.width}x${imgElement.height}`);
+      
+      // Create a p5.Image from the loaded image element
+      let p5img = createImage(imgElement.width, imgElement.height);
+      p5img.canvas.getContext('2d').drawImage(imgElement, 0, 0);
+      
+      // Store as p5.Image for WEBGL compatibility
+      this.floorTexture = p5img;
+      console.log('✅ Floor texture set from image');
+      
+      // Auto-save to localStorage for next session
+      this.saveFloorTextureToStorage();
+      console.log('✅ Floor texture set and saved for next session');
+      
+    } catch (e) {
+      console.error('❌ Error setting floor texture:', e);
+      console.error('Stack:', e.stack);
+    }
+  }
+  
+  // Public method to set floor texture from data URL
+  setFloorTextureFromURL(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+      this.setFloorTextureFromImage(img);
+    };
+    img.src = dataUrl;
   }
 
   // ----------------------------------------------------------
@@ -556,7 +828,9 @@ class GameManager {
   }
 
   onViewportResize() {
-    this.zBuffer = new Float32Array(SCREEN_WIDTH);
+    this.zBuffer = new Float32Array(RAY_COUNT);
+    this.rayDirXBuffer = new Float32Array(RAY_COUNT);
+    this.rayDirYBuffer = new Float32Array(RAY_COUNT);
     this.motionBlurBuffer = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
     this.motionBlurAmount = 0;
     this.motionBlurFrameCounter = 0;
@@ -574,6 +848,9 @@ class GameManager {
     const now = millis();
 
     this.gameState = "playing";
+    // Activer 3D si sur localhost, sinon rester en 2D
+    this.use3DMode = this.isLocalhostServer;
+    console.log("🎮 Game started - 3D Mode:", this.use3DMode, "isLocalhostServer:", this.isLocalhostServer);
     this.player.resetToSpawn();
     this.player.moveSpeed = PLAYER_MOVE_SPEED;
     this.orbs = [];
@@ -659,6 +936,7 @@ class GameManager {
   triggerEndState(reason, isVictory, titleText) {
     if (this.gameState !== "playing") return;
     this.gameState = "game-over";
+    this.use3DMode = false;  // Désactiver le mode 3D à la mort
     this.finalScore = Math.floor(this.score);
     this.gameOverReason = reason;
     this.gameWon = isVictory;
@@ -683,6 +961,29 @@ class GameManager {
 
   survivalSeconds() {
     return max(0, (millis() - this.gameStartMs) / 1000);
+  }
+
+  /**
+   * Toggle between 2D raycast and 3D WEBGL rendering
+   * Useful for testing and comparison
+   */
+  toggle3DMode() {
+    if (!this.scene3D.textureLoaded) {
+      console.warn("⚠️  3D mode unavailable: texture not loaded");
+      return false;
+    }
+    this.use3DMode = !this.use3DMode;
+    this.scene3D.updateZombies(this.orbs);
+    const status = this.scene3D.getStatus();
+    console.log(`🎮 Switched to ${status.mode} mode`);
+    return true;
+  }
+
+  /**
+   * Get current render mode status
+   */
+  getRenderModeStatus() {
+    return this.scene3D.getStatus();
   }
 
   // ----------------------------------------------------------
@@ -1423,6 +1724,7 @@ class GameManager {
     let repelY = 0;
     let closeToLava = false;
 
+    // Scan for nearby lava tiles (much smaller radius now)
     for (let row = minRow; row <= maxRow; row++) {
       for (let col = minCol; col <= maxCol; col++) {
         if (worldTileMap[row][col] !== 6) continue;
@@ -1862,6 +2164,11 @@ class GameManager {
         this.orbStunUntilMap.delete(orb);
       }
     }
+
+    // Synchronize 3D scene (NEW)
+    if (this.use3DMode && this.scene3D) {
+      this.scene3D.updateZombies(this.orbs, deltaTime || 16);
+    }
   }
 
   updateParticles(dt) {
@@ -2047,80 +2354,500 @@ class GameManager {
   // ----------------------------------------------------------
   renderFrame() {
     /*
-      PERFORMANCE-CRITICAL RENDER PIPELINE
-      ====================================
-      Steps :
-        1. Draw sky & floor with two fast rect() calls.
-        2. loadPixels()  — copy the canvas into the pixels[] typed array.
-        3. castAllRays()  — write textured wall columns into pixels[].
-        4. drawSpritesToBuffer() — write sprites into pixels[].
-        5. updatePixels() — push the modified array back to the canvas. (1 call!)
-        6. Draw lightweight overlays (vignette, minimap, HUD) with normal p5 shapes.
+      DISPATCHER: Delegates to active rendering mode
+      Mode separation allows independent testing/debugging
     */
-    this.drawSkyAndFloor();
+    const mode = this.use3DMode ? this.gameMode3D : this.gameMode2D;
+    
+    if (this.use3DMode) {
+      // 3D mode: Direct render to WEBGL
+      try {
+        mode.render();
+      } catch (e) {
+        console.error("3D render failed, falling back to 2D:", e);
+        this.use3DMode = false;
+        this.gameMode2D.render();
+      }
+    } else {
+      // 2D mode: Software raycasting
+      this.gameMode2D.render();
+      
+      // 2D-specific overlays
+      this.drawMotionBlurOverlay();
+      this.captureMotionBlurFrame();
+    }
+  }
 
-    loadPixels();                // step 2
-    this.castAllRays();          // step 3
-    this.drawSpritesToBuffer();  // step 4
-    updatePixels();              // step 5
+  // --- 3D WEBGL Rendering ---
+  renderTo3DBuffer() {
+    // Render using WEBGL graphics buffer
+    const g = this.webglGraphics;
+    
+    // HORROR MODE: Black background 
+    g.background(0, 0, 0);  // Pure black skybox for horror
+    // Skip expensive lighting for performance - use simple flat colors
+    // g.lights();
+    // g.ambientLight(60, 60, 60);
+    // g.directionalLight(100, 100, 100, 0.5, 1, 0.5);
+    
+    // Setup camera: first-person from player position with pitch support
+    const camY = -1.1;  // Eye height (slightly raised, NEGATIVE because Y+ is downward)
+    const lookAheadDist = 10;
+    const lookX = this.player.posX + cos(this.player.angle) * lookAheadDist;
+    const lookZ = this.player.posY + sin(this.player.angle) * lookAheadDist;
+    
+    // Apply pitch (vertical look angle, already in radians) to the look-at point
+    // Negative pitch = look down, positive pitch = look up
+    const lookY = camY - sin(this.player.pitch) * lookAheadDist;
+    
+    g.perspective(45, SCREEN_WIDTH / SCREEN_HEIGHT, 0.1, 1000);
+    g.camera(
+      this.player.posX, camY, this.player.posY,
+      lookX, lookY, lookZ,
+      0, 1, 0
+    );
+    
+    // Draw first-person arm and weapon
+    this.drawArmAndWeapon3D(g);
+    
+    // Draw floor - positioned at the same height as blocks
+    // Ensure texture exists
+    this.ensureFloorTextureCreated();
+    
+    g.push();
+    g.noStroke();
+    
+    const floorSize = MAP_TILE_COUNT;
+    const blockSize = 1.0;  // Size of one block
+    const floorRenderDist = 20;  // Render floor blocks within this distance
+    
+    // Apply floor as a grid of colored blocks - with culling
+    // Use procedural checkerboard pattern
+    const floorColor1 = [118, 140, 78];  // Green
+    const floorColor2 = [140, 115, 78];  // Tan
+    
+    // Only render floor blocks near the player
+    const minX = Math.max(0, Math.floor(this.player.posX - floorRenderDist));
+    const maxX = Math.min(floorSize, Math.ceil(this.player.posX + floorRenderDist));
+    const minZ = Math.max(0, Math.floor(this.player.posY - floorRenderDist));
+    const maxZ = Math.min(floorSize, Math.ceil(this.player.posY + floorRenderDist));
+    
+    for (let x = minX; x < maxX; x += blockSize) {
+      for (let z = minZ; z < maxZ; z += blockSize) {
+        // Checkerboard pattern: alternate colors based on block position
+        const blockX = Math.floor(x);
+        const blockZ = Math.floor(z);
+        const isEven = (blockX + blockZ) % 2 === 0;
+        const color = isEven ? floorColor1 : floorColor2;
+        
+        g.fill(color[0], color[1], color[2]);
+        g.push();
+        g.translate(x + blockSize/2, -0.5, z + blockSize/2);
+        g.box(blockSize, 0.05, blockSize);
+        g.pop();
+      }
+    }
+    
+    g.pop();
+    
+    // Draw all map tiles
+    this.drawMapBlocks3D(g);
+    
+    // Draw zombies - with culling to avoid rendering off-screen zombies
+    g.noStroke();  // Ensure no stroke for performance
+    g.fill(90, 150, 70);  // Zombie green
+    const renderDist = 15;  // Reduced from 25 - only render very close zombies
+    
+    for (let orb of this.orbs) {
+      if (orb.isHunter()) {
+        // Culling: skip zombies too far away
+        const distToZombie = Math.hypot(orb.posX - this.player.posX, orb.posY - this.player.posY);
+        if (distToZombie > renderDist) continue;
+        
+        g.push();
+        g.translate(orb.posX, -1.0, orb.posY);
+        g.rotateY(orb.bodyAngle || 0);
+        this.drawZombieVoxel3D(orb);
+        g.pop();
+      }
+    }
+  }
 
-    this.drawMotionBlurOverlay();
-    this.captureMotionBlurFrame();
+  /**
+   * Draw first-person arm and weapon in 3D
+   * Positioned relative to camera direction (both pitch and yaw)
+   * Improved: Better proportions and more detailed pistol
+   */
+  drawArmAndWeapon3D(g) {
+    g.push();
+    
+    // Position arm at player location
+    g.translate(
+      this.player.posX,
+      -1.1,
+      this.player.posY
+    );
+    
+    // Rotate with player angle (horizontal turn) FIRST
+    g.rotateY(-this.player.angle);  // Negative to match camera rotation
+    
+    // Rotate with camera pitch (vertical look) SECOND
+    g.rotateX(-this.player.pitch);  // Negative because pitch is inverted
+    
+    // Rotate arm 90 degrees to the right (initial orientation)
+    g.rotateY(-Math.PI / 2);
+    
+    // Offset to the right side and pull back (applied AFTER rotations in local space)
+    g.translate(0.8, 0.25, -0.9);
+    
+    // ===== DRAW ARM =====
+    g.noStroke();
+    
+    // Upper arm (shoulder to elbow) - skin color
+    g.fill(200, 140, 90);
+    g.push();
+    g.translate(0, -0.1, 0.3);
+    drawSharpBox(g, 0.22, 0.22, 0.8);
+    g.pop();
+    
+    // Sleeve upper arm - fabric
+    g.fill(180, 100, 60);
+    g.push();
+    g.translate(0.12, -0.1, 0.3);
+    drawSharpBox(g, 0.1, 0.25, 0.8);
+    g.pop();
+    
+    // Forearm (elbow to wrist) - skin color
+    g.fill(200, 140, 90);
+    g.push();
+    g.translate(0, -0.05, -0.25);
+    drawSharpBox(g, 0.2, 0.2, 0.65);
+    g.pop();
+    
+    // Sleeve forearm - fabric
+    g.fill(180, 100, 60);
+    g.push();
+    g.translate(0.1, -0.05, -0.25);
+    drawSharpBox(g, 0.08, 0.22, 0.65);
+    g.pop();
+    
+    // Wrist
+    g.fill(200, 140, 90);
+    g.push();
+    g.translate(0, 0.05, -0.75);
+    drawSharpBox(g, 0.18, 0.18, 0.15);
+    g.pop();
+    
+    // Hand holding gun
+    g.fill(200, 150, 100);
+    g.push();
+    g.translate(0.05, 0.08, -0.95);
+    drawSharpBox(g, 0.25, 0.22, 0.25);
+    g.pop();
+    
+    // ===== DRAW PISTOL =====
+    
+    // Barrel (main body)
+    g.fill(55, 55, 65);
+    g.push();
+    g.translate(0, -0.08, -1.1);
+    drawSharpBox(g, 0.08, 0.12, 0.95);
+    g.pop();
+    
+    // Slide (on top of barrel) - slightly brighter metal
+    g.fill(80, 80, 95);
+    g.push();
+    g.translate(0, -0.13, -1.1);
+    drawSharpBox(g, 0.07, 0.06, 0.92);
+    g.pop();
+    
+    // Hammer (rear of slide)
+    g.fill(70, 70, 85);
+    g.push();
+    g.translate(0.05, -0.15, -0.35);
+    drawSharpBox(g, 0.06, 0.08, 0.08);
+    g.pop();
+    
+    // Grip (main handle)
+    g.fill(60, 35, 20);
+    g.push();
+    g.translate(-0.14, 0.02, -0.75);
+    drawSharpBox(g, 0.12, 0.38, 0.3);
+    g.pop();
+    
+    // Grip panel (wood/grip texture area)
+    g.fill(80, 50, 30);
+    g.push();
+    g.translate(-0.2, 0.02, -0.75);
+    drawSharpBox(g, 0.04, 0.35, 0.28);
+    g.pop();
+    
+    // Trigger guard
+    g.fill(65, 65, 75);
+    g.push();
+    g.translate(0.02, -0.01, -0.8);
+    drawSharpBox(g, 0.08, 0.12, 0.12);
+    g.pop();
+    
+    // Trigger
+    g.fill(50, 50, 60);
+    g.push();
+    g.translate(0, 0, -0.8);
+    drawSharpBox(g, 0.03, 0.08, 0.08);
+    g.pop();
+    
+    // Frame (lower receiver)
+    g.fill(45, 45, 55);
+    g.push();
+    g.translate(-0.08, 0.04, -0.8);
+    drawSharpBox(g, 0.1, 0.08, 0.35);
+    g.pop();
+    
+    // Front sight
+    g.fill(65, 65, 75);
+    g.push();
+    g.translate(0, -0.18, -1.4);
+    drawSharpBox(g, 0.03, 0.12, 0.04);
+    g.pop();
+    
+    // Rear sight
+    g.fill(65, 65, 75);
+    g.push();
+    g.translate(0, -0.18, -0.45);
+    drawSharpBox(g, 0.03, 0.1, 0.04);
+    g.pop();
+    
+    // Muzzle (front of barrel)
+    g.fill(40, 40, 50);
+    g.push();
+    g.translate(0, -0.08, -1.55);
+    drawSharpBox(g, 0.09, 0.13, 0.12);
+    g.pop();
+    
+    // Muzzle threads detail
+    g.fill(50, 50, 60);
+    g.push();
+    g.translate(0, -0.08, -1.62);
+    drawSharpBox(g, 0.075, 0.115, 0.08);
+    g.pop();
+    
+    g.pop();
+  }
 
-    // Lightweight overlay draws
-    const shake = this.currentShakeOffset();
-    push();
-    translate(shake.x, shake.y);
-    this.drawVignette();
-    this.drawMinimap();
-    this.drawHUD();
-    this.drawFirstPersonWeapon();
-    this.drawCrosshair();
-    pop();
+  drawMapBlocks3D(g) {
+    // Iterate over visible map tiles only (frustum culling)
+    // ULTRA aggressive culling for maximum performance
+    const renderDist = 8;  // Reduced from 12 to ~200 blocks instead of 576
+    const minX = Math.max(0, Math.floor(this.player.posX - renderDist));
+    const maxX = Math.min(MAP_TILE_COUNT, Math.ceil(this.player.posX + renderDist));
+    const minY = Math.max(0, Math.floor(this.player.posY - renderDist));
+    const maxY = Math.min(MAP_TILE_COUNT, Math.ceil(this.player.posY + renderDist));
+    
+    const nightFactor = 1;  // Full day (0 = night, 1 = day) for consistent 3D rendering
+    
+    for (let mapY = minY; mapY < maxY; mapY++) {
+      for (let mapX = minX; mapX < maxX; mapX++) {
+        const tileId = worldTileMap[mapY][mapX];
+        
+        if (tileId === 0) continue;  // Empty tile
+        
+        g.push();
+        // Y+ is downward in WEBGL, so blocks start at Y=0 and go down
+        g.translate(mapX + 0.5, -1.0, mapY + 0.5);
+        drawMinecraftBlock(g, tileId, nightFactor);
+        g.pop();
+      }
+    }
+  }
+
+  /**
+   * Draw a single zombie voxel model in 3D - ULTRA SIMPLIFIED
+   * Single color, minimal geometry for max performance
+   */
+  drawZombieVoxel3D(orb) {
+    const g = this.webglGraphics;
+    
+    // One unified zombie body - no separate parts for speed!
+    // Overall height ~1.5 units
+    g.fill(80, 150, 60);  // Zombie green
+    
+    // Simple capsule-like body
+    g.push();
+    g.translate(0, 0, 0);
+    drawSharpBox(g, 0.4, 1.0, 0.25);  // Main body
+    g.pop();
+    
+    // Head on top
+    g.push();
+    g.translate(0, -0.6, 0);
+    drawSharpBox(g, 0.35, 0.35, 0.35);  // Head
+    g.pop();
+  }
+
+  /**
+   * Draw a textured box with proper Minecraft skin UV mapping
+   * Standard Minecraft skin layout (64×64)
+   */
+  drawTexturedBox(g, w, h, d, partType = 'body') {
+    // Minecraft skin texture coordinates (in pixels) for 64×64 texture
+    const skinW = 64, skinH = 64;
+    
+    // Standard Minecraft skin layout for all parts
+    // Reference: https://minecraft.fandom.com/wiki/Skin#Layout
+    const uvMaps = {
+      head: {
+        // Head uses 8×8 area, top-left at (8, 8)
+        front: { x: 8, y: 8, w: 8, h: 8 },      // Face front
+        back: { x: 24, y: 8, w: 8, h: 8 },      // Back of head
+        top: { x: 8, y: 0, w: 8, h: 8 },        // Top
+        bottom: { x: 16, y: 0, w: 8, h: 8 },    // Bottom
+        right: { x: 16, y: 8, w: 8, h: 8 },     // Right side
+        left: { x: 0, y: 8, w: 8, h: 8 }        // Left side (corrected)
+      },
+      body: {
+        // Body uses 8×12 area, top-left at (20, 20)
+        front: { x: 20, y: 20, w: 8, h: 12 },   // Front
+        back: { x: 32, y: 20, w: 8, h: 12 },    // Back
+        top: { x: 20, y: 16, w: 8, h: 4 },      // Top (thin)
+        bottom: { x: 28, y: 16, w: 8, h: 4 },   // Bottom (thin)
+        right: { x: 28, y: 20, w: 4, h: 12 },   // Right side
+        left: { x: 16, y: 20, w: 4, h: 12 }     // Left side
+      },
+      arm: {
+        // Right arm uses 4×12 area at (44, 20)
+        front: { x: 44, y: 20, w: 4, h: 12 },   // Front
+        back: { x: 52, y: 20, w: 4, h: 12 },    // Back (extended)
+        top: { x: 44, y: 16, w: 4, h: 4 },      // Top
+        bottom: { x: 48, y: 16, w: 4, h: 4 },   // Bottom
+        right: { x: 48, y: 20, w: 4, h: 12 },   // Right
+        left: { x: 40, y: 20, w: 4, h: 12 }     // Left
+      },
+      leg: {
+        // Left leg uses 4×12 area at (4, 20)
+        front: { x: 4, y: 20, w: 4, h: 12 },    // Front
+        back: { x: 12, y: 20, w: 4, h: 12 },    // Back (extended)
+        top: { x: 4, y: 16, w: 4, h: 4 },       // Top
+        bottom: { x: 8, y: 16, w: 4, h: 4 },    // Bottom
+        right: { x: 8, y: 20, w: 4, h: 12 },    // Right
+        left: { x: 0, y: 20, w: 4, h: 12 }      // Left
+      }
+    };
+    
+    const uv = uvMaps[partType] || uvMaps.body;
+    
+    // Helper to convert pixel coords to normalized UV (0..1)
+    const normalize = (coord) => ({
+      u1: coord.x / skinW,
+      v1: coord.y / skinH,
+      u2: (coord.x + coord.w) / skinW,
+      v2: (coord.y + coord.h) / skinH
+    });
+    
+    const front = normalize(uv.front);
+    const back = normalize(uv.back);
+    const top = normalize(uv.top);
+    const bottom = normalize(uv.bottom);
+    const right = normalize(uv.right);
+    const left = normalize(uv.left);
+    
+    // Front face (facing +Z)
+    g.beginShape();
+    g.vertex(-w / 2, -h / 2, d / 2, front.u1, front.v1);
+    g.vertex(w / 2, -h / 2, d / 2, front.u2, front.v1);
+    g.vertex(w / 2, h / 2, d / 2, front.u2, front.v2);
+    g.vertex(-w / 2, h / 2, d / 2, front.u1, front.v2);
+    g.endShape(CLOSE);
+    
+    // Back face (facing -Z)
+    g.beginShape();
+    g.vertex(-w / 2, -h / 2, -d / 2, back.u2, back.v1);
+    g.vertex(-w / 2, h / 2, -d / 2, back.u2, back.v2);
+    g.vertex(w / 2, h / 2, -d / 2, back.u1, back.v2);
+    g.vertex(w / 2, -h / 2, -d / 2, back.u1, back.v1);
+    g.endShape(CLOSE);
+    
+    // Top face (facing +Y)
+    g.beginShape();
+    g.vertex(-w / 2, -h / 2, -d / 2, top.u1, top.v2);
+    g.vertex(w / 2, -h / 2, -d / 2, top.u2, top.v2);
+    g.vertex(w / 2, -h / 2, d / 2, top.u2, top.v1);
+    g.vertex(-w / 2, -h / 2, d / 2, top.u1, top.v1);
+    g.endShape(CLOSE);
+    
+    // Bottom face (facing -Y)
+    g.beginShape();
+    g.vertex(-w / 2, h / 2, -d / 2, bottom.u1, bottom.v1);
+    g.vertex(-w / 2, h / 2, d / 2, bottom.u1, bottom.v2);
+    g.vertex(w / 2, h / 2, d / 2, bottom.u2, bottom.v2);
+    g.vertex(w / 2, h / 2, -d / 2, bottom.u2, bottom.v1);
+    g.endShape(CLOSE);
+    
+    // Right face (facing +X)
+    g.beginShape();
+    g.vertex(w / 2, -h / 2, -d / 2, right.u1, right.v1);
+    g.vertex(w / 2, -h / 2, d / 2, right.u2, right.v1);
+    g.vertex(w / 2, h / 2, d / 2, right.u2, right.v2);
+    g.vertex(w / 2, h / 2, -d / 2, right.u1, right.v2);
+    g.endShape(CLOSE);
+    
+    // Left face (facing -X)
+    g.beginShape();
+    g.vertex(-w / 2, -h / 2, -d / 2, left.u2, left.v1);
+    g.vertex(-w / 2, h / 2, -d / 2, left.u2, left.v2);
+    g.vertex(-w / 2, h / 2, d / 2, left.u1, left.v2);
+    g.vertex(-w / 2, -h / 2, d / 2, left.u1, left.v1);
+    g.endShape(CLOSE);
   }
 
   // --- Sky & Floor ---
   drawSkyAndFloor() {
     /*
-      Day / Night cycle:
-      Smoothly interpolate sky colour from daytime blue to midnight dark-blue.
-      A full cycle takes ~90 seconds.
+      HORROR MODE: Black sky + floor with exponential fog gradient
+      Sol sans texture - juste gradient de brouillard
     */
-    const cyclePhase = (this.survivalSeconds() % 90) / 90;
-    const nightFactor = (Math.sin(cyclePhase * TWO_PI - HALF_PI) + 1) / 2;
-
-    const skyR = lerp(85, 12, nightFactor);
-    const skyG = lerp(130, 14, nightFactor);
-    const skyB = lerp(210, 45, nightFactor);
-
-    const floorR = lerp(95, 28, nightFactor);
-    const floorG = lerp(80, 22, nightFactor);
-    const floorB = lerp(65, 16, nightFactor);
-
     const horizon = constrain(
       SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx(),
       0,
       SCREEN_HEIGHT
     );
 
-    noStroke();
-    fill(skyR, skyG, skyB);
+    const ctx = drawingContext;
+    
+    // Black sky
+    fill(0, 0, 0);
     rect(0, 0, SCREEN_WIDTH, horizon);
-
-    fill(floorR, floorG, floorB);
+    
+    // White floor
+    fill(255, 255, 255);
     rect(0, horizon, SCREEN_WIDTH, SCREEN_HEIGHT - horizon);
+    
+    // Overlay fog gradient on floor only
+    const floorGradient = ctx.createLinearGradient(
+      0, horizon,           // start at horizon (black)
+      0, SCREEN_HEIGHT      // end at bottom (white/visible)
+    );
+    
+    // Fog stops (black at far, transparent at near)
+    floorGradient.addColorStop(0.0, 'rgba(0, 0, 0, 1.0)');      // Black at horizon (far, foggy)
+    floorGradient.addColorStop(0.2, 'rgba(0, 0, 0, 0.7)');      // Very dark
+    floorGradient.addColorStop(0.4, 'rgba(0, 0, 0, 0.4)');      // Medium fog
+    floorGradient.addColorStop(0.6, 'rgba(0, 0, 0, 0.15)');     // Light fog
+    floorGradient.addColorStop(0.8, 'rgba(0, 0, 0, 0.02)');     // Almost transparent
+    floorGradient.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');      // Transparent at bottom
+    
+    ctx.fillStyle = floorGradient;
+    ctx.fillRect(0, horizon, SCREEN_WIDTH, SCREEN_HEIGHT - horizon);
   }
 
   // --- Raycasting core (DDA algorithm) ---
   castAllRays() {
-    /*
-      For each screen column we cast one ray using the DDA
-      (Digital Differential Analyser) algorithm.  When we hit
-      a wall we compute perpendicular distance for correct
-      projection and sample the texture column.
-    */
+    // Delegate to active game mode - this is a stub for backwards compatibility
+    // The real raycasting happens in Game2DMode.castAllRays()
+    if (this.gameMode2D) {
+      return this.gameMode2D.castAllRays();
+    }
+    // Fallback to minimal implementation if mode not ready
     const halfFOV = FIELD_OF_VIEW_RADIANS / 2;
-    const cameraOffset = this.cameraScreenOffsetPx();
 
     for (let col = 0; col < RAY_COUNT; col++) {
       const rayScreenFraction = (col / RAY_COUNT) * 2 - 1;
@@ -2128,6 +2855,8 @@ class GameManager {
 
       const rayDirX = Math.cos(rayAngle);
       const rayDirY = Math.sin(rayAngle);
+      this.rayDirXBuffer[col] = rayDirX;
+      this.rayDirYBuffer[col] = rayDirY;
 
       // --- DDA setup ---
       let mapX = Math.floor(this.player.posX);
@@ -2230,8 +2959,20 @@ class GameManager {
    * @param {Uint8ClampedArray} texPixels — pre-cached RGBA pixel data of the block texture
    */
   drawTexturedColumn(screenCol, drawStart, stripHeight, texPixels, texX, distance, hitSide) {
-    const rawFog = constrain(1 - (distance / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
-    const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+    // Apply exponential fog shader (same as 3D mode)
+    // Fog begins at FOG_3D_START_DISTANCE and darkens exponentially to black
+    let fogFactor;
+    if (FOG_3D_ENABLED) {
+      // Exponential fog: exp(-density * (distance - startDist)^2)
+      const distFromFogStart = Math.max(0, distance - FOG_3D_START_DISTANCE);
+      fogFactor = Math.exp(-FOG_3D_DENSITY * distFromFogStart * distFromFogStart);
+      fogFactor = Math.max(0, Math.min(1, fogFactor)); // Clamp to [0, 1]
+    } else {
+      // Fallback to linear fog if shader disabled
+      const rawFog = constrain(1 - (distance / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
+      fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+    }
+
     const sideBrightness = hitSide === 1 ? SIDE_SHADE_FACTOR : 1.0;
     const combinedShade = fogFactor * sideBrightness;
 
@@ -2252,13 +2993,71 @@ class GameManager {
     }
   }
 
+  /**
+   * Apply exponential fog to the floor plane
+   * Uses raycasting distances (zBuffer) to create a spherical fog effect around player
+   * Fog factor is calculated based on distance from player to point on floor
+   */
+  applyFloorFog() {
+    if (!FOG_3D_ENABLED) return;
+
+    const horizon = Math.floor(SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx());
+
+    // For each column (corresponding to a ray direction)
+    for (let screenX = 0; screenX < SCREEN_WIDTH; screenX++) {
+      // Get the base distance from the ray (distance to wall/block if it exists)
+      const rayDistance = this.zBuffer[screenX] || MAX_RAY_DISTANCE;
+
+      // For each pixel in the floor area (below horizon)
+      for (let screenY = horizon; screenY < SCREEN_HEIGHT; screenY++) {
+        // Calculate perspective-based distance
+        const relativeY = screenY - horizon;
+        const maxScreenY = SCREEN_HEIGHT - horizon;
+        const perspectiveRatio = 1 - (relativeY / maxScreenY);  // 1 at horizon, 0 at bottom
+        
+        // Approximate world distance for this floor pixel
+        // Uses ray distance scaled by perspective ratio
+        // Closer to horizon = shorter distance (more visible)
+        // Further down = longer distance (more fog)
+        const approximateDistance = FOG_3D_START_DISTANCE + perspectiveRatio * rayDistance;
+
+        // Calculate exponential fog factor
+        const distFromFogStart = Math.max(0, approximateDistance - FOG_3D_START_DISTANCE);
+        const fogFactor = Math.exp(-FOG_3D_DENSITY * distFromFogStart * distFromFogStart);
+        const clampedFogFactor = Math.max(0, Math.min(1, fogFactor));
+
+        // Apply fog to this pixel
+        const dstIdx = 4 * (screenY * SCREEN_WIDTH + screenX);
+        
+        // Only apply if pixel is part of the white floor
+        const r = pixels[dstIdx];
+        const g = pixels[dstIdx + 1];
+        const b = pixels[dstIdx + 2];
+        
+        if (r > 50 && g > 50 && b > 50) {
+          // Darken RGB channels by fog factor
+          pixels[dstIdx]     *= clampedFogFactor;      // R
+          pixels[dstIdx + 1] *= clampedFogFactor;      // G
+          pixels[dstIdx + 2] *= clampedFogFactor;      // B
+        }
+      }
+    }
+  }
+
   // --- Sprite rendering into pixel buffer (orbs, enemies, particles) ---
   drawSpritesToBuffer() {
     const allSprites = [];
+    const MAX_SPRITE_DIST = MAX_RAY_DISTANCE + 2; // culling distance
+    const playerX = this.player.posX;
+    const playerY = this.player.posY;
 
     for (const orb of this.orbs) {
-      const dist = Math.hypot(orb.posX - this.player.posX, orb.posY - this.player.posY);
-      // Determine sprite visual type from orb state
+      const dx = orb.posX - playerX;
+      const dy = orb.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue; // Skip far sprites
+      
+      const dist = Math.sqrt(distSq);
       let spriteType;
       if (orb.isSafe())         spriteType = "safe";
       else if (orb.isWarning()) spriteType = "warning";
@@ -2268,61 +3067,96 @@ class GameManager {
     }
 
     for (const p of this.particles) {
-      const dist = Math.hypot(p.posX - this.player.posX, p.posY - this.player.posY);
+      const dx = p.posX - playerX;
+      const dy = p.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
+      
+      const dist = Math.sqrt(distSq);
       allSprites.push({ x: p.posX, y: p.posY, dist, type: "particle", obj: p });
     }
 
     for (const wm of this.worldModules) {
-      const dist = Math.hypot(wm.posX - this.player.posX, wm.posY - this.player.posY);
+      const dx = wm.posX - playerX;
+      const dy = wm.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
+      
+      const dist = Math.sqrt(distSq);
       allSprites.push({ x: wm.posX, y: wm.posY, dist, type: "world-module", obj: wm });
     }
 
     for (const drop of this.drops) {
-      const dist = Math.hypot(drop.posX - this.player.posX, drop.posY - this.player.posY);
+      const dx = drop.posX - playerX;
+      const dy = drop.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
+      
+      const dist = Math.sqrt(distSq);
       allSprites.push({ x: drop.posX, y: drop.posY, dist, type: "drop", obj: drop });
     }
 
     for (const beacon of this.missionBeacons) {
       if (beacon.activated) continue;
-      const dist = Math.hypot(beacon.posX - this.player.posX, beacon.posY - this.player.posY);
+      const dx = beacon.posX - playerX;
+      const dy = beacon.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
+      
+      const dist = Math.sqrt(distSq);
       allSprites.push({ x: beacon.posX, y: beacon.posY, dist, type: "mission-beacon", obj: beacon });
     }
 
     if (this.extractionPortal) {
-      const dist = Math.hypot(this.extractionPortal.posX - this.player.posX, this.extractionPortal.posY - this.player.posY);
-      allSprites.push({
-        x: this.extractionPortal.posX,
-        y: this.extractionPortal.posY,
-        dist,
-        type: "extraction-portal",
-        obj: this.extractionPortal,
-      });
+      const dx = this.extractionPortal.posX - playerX;
+      const dy = this.extractionPortal.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= MAX_SPRITE_DIST * MAX_SPRITE_DIST) {
+        const dist = Math.sqrt(distSq);
+        allSprites.push({
+          x: this.extractionPortal.posX,
+          y: this.extractionPortal.posY,
+          dist,
+          type: "extraction-portal",
+          obj: this.extractionPortal,
+        });
+      }
     }
 
     if (this.punchMachine) {
-      const dist = Math.hypot(this.punchMachine.posX - this.player.posX, this.punchMachine.posY - this.player.posY);
-      allSprites.push({
-        x: this.punchMachine.posX,
-        y: this.punchMachine.posY,
-        dist,
-        type: "punch-machine",
-        obj: this.punchMachine,
-      });
+      const dx = this.punchMachine.posX - playerX;
+      const dy = this.punchMachine.posY - playerY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= MAX_SPRITE_DIST * MAX_SPRITE_DIST) {
+        const dist = Math.sqrt(distSq);
+        allSprites.push({
+          x: this.punchMachine.posX,
+          y: this.punchMachine.posY,
+          dist,
+          type: "punch-machine",
+          obj: this.punchMachine,
+        });
+      }
     }
 
-    // Sort back-to-front
-    allSprites.sort((a, b) => b.dist - a.dist);
-
-    for (const sp of allSprites) {
-      this.drawSingleSpriteToBuffer(sp);
+    // Sort back-to-front (ONLY if we have sprites - avoid empty sorts)
+    if (allSprites.length > 0) {
+      allSprites.sort((a, b) => b.dist - a.dist);
+      
+      const now = millis(); // Cache millis() once per frame
+      for (const sp of allSprites) {
+        this.drawSingleSpriteToBuffer(sp, now);
+      }
     }
   }
 
   /**
    * Draws a single sprite directly into the pixels[] buffer.
    * Billboard projection with z-buffer occlusion.
+   * @param {object} spriteData - sprite data
+   * @param {number} now - cached millis() value to avoid expensive system calls
    */
-  drawSingleSpriteToBuffer(spriteData) {
+  drawSingleSpriteToBuffer(spriteData, now) {
     const relX = spriteData.x - this.player.posX;
     const relY = spriteData.y - this.player.posY;
 
@@ -2374,7 +3208,7 @@ class GameManager {
     let drawEndY   = Math.min(SCREEN_HEIGHT, Math.floor(SCREEN_HEIGHT / 2 + spriteScreenH / 2 + cameraOffset));
 
     if (isZombieHumanoid) {
-      const bobPx = Math.sin(millis() * 0.01 + spriteData.obj.posX * 0.8 + spriteData.obj.posY * 0.6)
+      const bobPx = Math.sin(now * 0.01 + spriteData.obj.posX * 0.8 + spriteData.obj.posY * 0.6)
         * Math.max(1, Math.min(4, spriteScreenH * 0.04));
       const bobOffset = Math.floor(bobPx);
       drawStartY = Math.max(0, drawStartY + bobOffset);
@@ -2382,6 +3216,25 @@ class GameManager {
     }
 
     if (drawStartX >= drawEndX || drawStartY >= drawEndY) return;
+
+    if (isZombieHumanoid) {
+      // Try texture-based rendering first if available
+      if (shouldRenderZombieAsTexture(this)) {
+        const textureDrawn = drawZombieTextureSprite(this, pixels, {
+          screenX: spriteScreenX,
+          screenY: SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx(),
+          screenWidth: spriteScreenW,
+          screenHeight: spriteScreenH,
+          worldAngle: spriteData.obj.bodyAngle || 0,
+          distance: spriteData.dist,
+          zBuffer: this.zBuffer,
+        });
+        if (textureDrawn) return;
+      }
+      // Fall back to volumetric rendering
+      this.drawZombieVolumetricToBuffer(spriteData, drawStartX, drawEndX);
+      return;
+    }
 
     const rawFog = constrain(1 - (spriteData.dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
     const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
@@ -2392,7 +3245,7 @@ class GameManager {
     let baseA = 255;
     if (!isZombieHumanoid) {
       if (spriteData.type === "safe") {
-        const pulse = 0.7 + 0.3 * Math.sin(millis() * 0.006);
+        const pulse = 0.7 + 0.3 * Math.sin(now * 0.006);
         baseR = 60 * pulse;
         baseG = 255 * pulse;
         baseB = 100 * pulse;
@@ -2401,13 +3254,13 @@ class GameManager {
         baseG = lerp(baseG, 180, mp * 0.3);
       } else if (spriteData.type === "warning") {
         const wp = spriteData.obj.warningProgress();
-        const flash = Math.sin(millis() * 0.025) > 0 ? 1 : 0.4;
+        const flash = Math.sin(now * 0.025) > 0 ? 1 : 0.4;
         baseR = lerp(255, 255, wp) * flash;
         baseG = lerp(180, 40, wp) * flash;
         baseB = 30 * flash;
       } else if (spriteData.type === "world-module") {
         const wm = spriteData.obj;
-        const pulse = 0.72 + 0.28 * Math.sin(millis() * 0.008 + wm.posX * 0.8 + wm.posY * 0.5);
+        const pulse = 0.72 + 0.28 * Math.sin(now * 0.008 + wm.posX * 0.8 + wm.posY * 0.5);
         if (wm.type === "aegis") {
           baseR = 85 * pulse;
           baseG = 225 * pulse;
@@ -2423,7 +3276,7 @@ class GameManager {
         }
       } else if (spriteData.type === "drop") {
         const drop = spriteData.obj;
-        const pulse = 0.75 + 0.25 * Math.sin(millis() * 0.015 + drop.posX * 1.8);
+        const pulse = 0.75 + 0.25 * Math.sin(now * 0.015 + drop.posX * 1.8);
         if (drop.type === "ammo") {
           baseR = 255;
           baseG = 210 * pulse;
@@ -2446,17 +3299,16 @@ class GameManager {
           baseB = 255;
         }
       } else if (isMissionBeacon) {
-        const beaconPulse = 0.72 + 0.28 * Math.sin(millis() * 0.01 + spriteData.obj.pulseOffset);
+        const beaconPulse = 0.72 + 0.28 * Math.sin(now * 0.01 + spriteData.obj.pulseOffset);
         baseR = 120 * beaconPulse;
         baseG = 250 * beaconPulse;
         baseB = 220;
       } else if (isExtractionPortal) {
-        const portalPulse = 0.65 + 0.35 * Math.sin(millis() * 0.014);
+        const portalPulse = 0.65 + 0.35 * Math.sin(now * 0.014);
         baseR = 90 * portalPulse;
         baseG = 255;
         baseB = 165 * portalPulse;
       } else if (isPunchMachine) {
-        const now = millis();
         const sinceUse = now - spriteData.obj.lastUseMs;
         const cooldownFrac = constrain(sinceUse / PUNCH_MACHINE_COOLDOWN_MS, 0, 1);
         const pulse = 0.72 + 0.28 * Math.sin(now * 0.014);
@@ -2499,7 +3351,16 @@ class GameManager {
     const orbStepY = isCollectOrb ? orbTexH / orbSpriteH : 0;
 
     for (let sx = drawStartX; sx < drawEndX; sx++) {
-      if (transformY > this.zBuffer[sx] + 0.035) continue;
+      // Z-buffer occlusion test: skip only if definitely behind a wall
+      // DON'T clip sprites that are drawn near the weapon zone (right side)
+      // since the weapon is always drawn on top after updatePixels()
+      const wallDepth = this.zBuffer[sx] || MAX_RAY_DISTANCE;
+      const closeToWeaponZone = sx > SCREEN_WIDTH * 0.6;  // Near weapon on right 60%+
+      
+      // Only apply z-buffer culling if we're NOT close to weapon zone OR
+      // if we're significantly behind (more margin)
+      if (!closeToWeaponZone && transformY > wallDepth + 0.1) continue;
+      if (closeToWeaponZone && transformY > wallDepth + 0.5) continue;  // More lenient far away
 
       let zombieTx = 0;
       if (isZombieHumanoid) {
@@ -2573,92 +3434,467 @@ class GameManager {
     }
   }
 
-  createZombieSpriteCache() {
-    const sheet = ZOMBIE_USE_EXTERNAL_SPRITESHEET ? this.getZombieSpriteSheetImage() : null;
-    if (sheet) {
-      const frameCount = Math.max(1, Math.floor(ZOMBIE_SPRITE_SHEET_FRAME_COUNT));
-      const frameWidth = Math.max(1, Math.floor(sheet.width / frameCount));
-      const frameHeight = Math.max(1, sheet.height);
+  drawZombieVolumetricToBuffer(spriteData, drawStartX, drawEndX) {
+    const orb = spriteData.obj;
+    if (!orb) return;
 
-      return {
-        mode: "sheet",
-        width: frameWidth,
-        height: frameHeight,
-        frameCount,
-        fps: Math.max(1, ZOMBIE_SPRITE_SHEET_FPS),
-        patrolFrontFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
-        patrolLeftFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
-        patrolRightFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "patrol"),
-        chaseFrontFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
-        chaseLeftFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
-        chaseRightFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "chase"),
-        attackFrontFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
-        attackLeftFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
-        attackRightFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "attack"),
-        chargeFrontFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
-        chargeLeftFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
-        chargeRightFrames: this.buildZombieSpriteSheetVariantFrames(sheet, frameWidth, frameHeight, frameCount, "charge"),
-      };
+    const variant = this.resolveZombieAnimationVariant(spriteData);
+    const palette = this.getZombieVoxelPalette(variant);
+    const parts = this.buildZombieVolumetricParts(orb, palette, variant);
+    const centerY = SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx();
+
+    const fogFromDistance = (dist) => {
+      const rawFog = constrain(1 - (dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
+      return Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+    };
+
+    const xStart = Math.max(0, drawStartX);
+    const xEnd = Math.min(SCREEN_WIDTH, drawEndX);
+    const screenToRayRatio = RAY_COUNT / SCREEN_WIDTH;  // Map screen columns to ray columns
+
+    for (let sx = xStart; sx < xEnd; sx++) {
+      // Map screen column to ray column (since RAY_COUNT may differ from SCREEN_WIDTH)
+      const rayCol = Math.max(0, Math.min(RAY_COUNT - 1, Math.floor(sx * screenToRayRatio)));
+      
+      const rayDirX = this.rayDirXBuffer[rayCol];
+      const rayDirY = this.rayDirYBuffer[rayCol];
+      const wallDist = this.zBuffer[sx];
+
+      // Skip only if both directions are nearly zero
+      if (Math.abs(rayDirX) < 1e-8 && Math.abs(rayDirY) < 1e-8) continue;
+
+      const hits = [];
+
+      for (const part of parts) {
+        const hit = this.intersectRayOBB2D(
+          this.player.posX,
+          this.player.posY,
+          rayDirX,
+          rayDirY,
+          part.cx,
+          part.cy,
+          part.halfW,
+          part.halfD,
+          part.yaw
+        );
+
+        if (!hit) continue;
+        if (hit.t <= 0.01) continue;
+        if (hit.t > wallDist + 0.02) continue;
+
+        hits.push({
+          t: hit.t,
+          side: hit.side,
+          part,
+        });
+      }
+
+      if (hits.length === 0) continue;
+
+      // Render from far to near so deeper body parts remain visible
+      // where nearer parts do not cover vertically.
+      hits.sort((a, b) => b.t - a.t);
+
+      for (const hitInfo of hits) {
+        const pxPerWorld = SCREEN_HEIGHT / hitInfo.t;
+        const topY = Math.floor(centerY - (hitInfo.part.baseZ + hitInfo.part.height) * pxPerWorld);
+        const bottomY = Math.floor(centerY - hitInfo.part.baseZ * pxPerWorld);
+
+        const yStart = Math.max(0, topY);
+        const yEnd = Math.min(SCREEN_HEIGHT, bottomY);
+        if (yStart >= yEnd) continue;
+
+        const fog = fogFromDistance(hitInfo.t);
+        const isSide = hitInfo.side === "y";
+        const shade = isSide ? SIDE_SHADE_FACTOR : 1;
+
+        // Determine colors for this hit
+        const procColor = isSide ? hitInfo.part.sideColor : hitInfo.part.frontColor;
+
+        for (let sy = yStart; sy < yEnd; sy++) {
+          let srcColor = procColor;
+          
+          // FORCE texture usage if available, don't fallback to procedural
+          if (hitInfo.part.partName && window.PRELOADED_ZOMBIE_SKIN_IMAGE && window.PRELOADED_ZOMBIE_SKIN_IMAGE.width > 0) {
+            const partTopY = centerY - (hitInfo.part.baseZ + hitInfo.part.height) * pxPerWorld;
+            const vRatio = Math.max(0, Math.min(1, (sy - partTopY) / (bottomY - partTopY)));
+            
+            // Sample texture
+            const sampled = this.sampleZombieSkinTexture(hitInfo.part.partName, "y", 0.5, vRatio);
+            if (sampled && sampled.length >= 3) {
+              srcColor = sampled;
+            }
+          }
+
+          const r = srcColor[0] * fog * shade;
+          const g = srcColor[1] * fog * shade;
+          const b = srcColor[2] * fog * shade;
+
+          const dstIdx = 4 * (sy * SCREEN_WIDTH + sx);
+          pixels[dstIdx] = r;
+          pixels[dstIdx + 1] = g;
+          pixels[dstIdx + 2] = b;
+        }
+      }
+    }
+  }
+
+  buildZombieVolumetricParts(orb, palette, variant) {
+    // Minecraft-like canonical proportions in world units:
+    // head 8x8x8, body 8x12x4, arms 4x12x4, legs 4x12x4.
+    // For silhouette verification we keep motion neutral (no sway/bob/lunge).
+    const x = orb.posX;
+    const y = orb.posY;
+    const bob = 0;
+    const lunge = 0;
+
+    // Adjust bodyAngle by -90° so front face is shown (not side)
+    const bodyYaw = (typeof orb.bodyAngle === "number" ? orb.bodyAngle : Math.PI / 2) - Math.PI / 2;
+
+    const lookLen = Math.hypot(orb.lookDirX || 0, orb.lookDirY || 0);
+    const headDirX = lookLen > 0.0001 ? orb.lookDirX / lookLen : 0;
+    const headDirY = lookLen > 0.0001 ? orb.lookDirY / lookLen : 1;
+
+    // Head anchored to torso (no floating). Look direction only affects face orientation.
+    const torsoCenterX = x + lunge;
+    const torsoCenterY = y;
+    const headCenterX = torsoCenterX;
+    const headCenterY = torsoCenterY;
+
+    const makePart = (cx, cy, hw, hd, yaw, baseZ, height, frontColor, sideColor, partName = "") => ({
+      cx,
+      cy,
+      halfW: hw,
+      halfD: hd,
+      yaw,
+      baseZ,
+      height,
+      frontColor,
+      sideColor,
+      partName,
+    });
+
+    const parts = [];
+
+    // Torso
+    parts.push(
+      makePart(
+        torsoCenterX,
+        torsoCenterY,
+        0.16, // 8 wide
+        0.08, // 4 deep
+        bodyYaw,
+        -0.16 + bob,
+        0.48, // 12 tall
+        palette.shirt.front,
+        palette.shirt.side,
+        "torso"
+      )
+    );
+
+    // Head - rotates with body (rigid skeleton, no independent head rotation)
+    parts.push(
+      makePart(
+        headCenterX,
+        headCenterY,
+        0.16, // 8 wide
+        0.16, // 8 deep (true cube footprint)
+        bodyYaw,
+        0.35 + bob,
+        0.32, // 8 tall
+        palette.skin.front,
+        palette.skin.side,
+        "head"
+      )
+    );
+
+    // Calculate arm and leg positions with rotation around torso center
+    // Local offsets (relative to torso in unrotated frame)
+    const leftArmLocalX = -0.24;   // Further from center
+    let leftArmLocalY = 0;
+    const rightArmLocalX = 0.24;   // Further from center
+    let rightArmLocalY = 0;
+    const leftLegLocalX = -0.12;
+    let leftLegLocalY = 0;
+    const rightLegLocalX = 0.12;
+    let rightLegLocalY = 0;
+
+    // Walking animation: arms and legs swing opposite to each other
+    // Only animate if zombie is moving (isHunter)
+    if (orb.isHunter && orb.isHunter()) {
+      const walkPhase = (millis() * 0.005) % (Math.PI * 2); // cycling walk animation
+      const legSwingAmount = 0.08; // amplitude of forward/backward swing
+      const armSwingAmount = 0.06; // arms swing less than legs
+      
+      // Left leg swings forward when right leg swings back (opposite phase)
+      leftLegLocalY = Math.sin(walkPhase) * legSwingAmount;
+      rightLegLocalY = Math.sin(walkPhase + Math.PI) * legSwingAmount;
+      
+      // Arms swing opposite to legs (when legs forward, arms back)
+      leftArmLocalY = Math.sin(walkPhase + Math.PI) * armSwingAmount;
+      rightArmLocalY = Math.sin(walkPhase) * armSwingAmount;
     }
 
-    const width = 40;
-    const height = 58;
-    const patrol = this.buildZombieSpriteVariant(width, height, "patrol");
-    const chase = this.buildZombieSpriteVariant(width, height, "chase");
-    const attack = this.buildZombieSpriteVariant(width, height, "attack");
-    const charge = this.buildZombieSpriteVariant(width, height, "charge");
+    // Rotate positions around torso center based on bodyYaw
+    const cosYaw = Math.cos(bodyYaw);
+    const sinYaw = Math.sin(bodyYaw);
+
+    const leftArmX = torsoCenterX + leftArmLocalX * cosYaw - leftArmLocalY * sinYaw;
+    const leftArmY = torsoCenterY + leftArmLocalX * sinYaw + leftArmLocalY * cosYaw;
+    const rightArmX = torsoCenterX + rightArmLocalX * cosYaw - rightArmLocalY * sinYaw;
+    const rightArmY = torsoCenterY + rightArmLocalX * sinYaw + rightArmLocalY * cosYaw;
+    const leftLegX = torsoCenterX + leftLegLocalX * cosYaw - leftLegLocalY * sinYaw;
+    const leftLegY = torsoCenterY + leftLegLocalX * sinYaw + leftLegLocalY * cosYaw;
+    const rightLegX = torsoCenterX + rightLegLocalX * cosYaw - rightLegLocalY * sinYaw;
+    const rightLegY = torsoCenterY + rightLegLocalX * sinYaw + rightLegLocalY * cosYaw;
+
+    // Left arm / right arm - attached at shoulders with true proportions (4×12×4)
+    parts.push(
+      makePart(
+        leftArmX,
+        leftArmY,
+        0.08, // 4 wide
+        0.08, // 4 deep (true proportions)
+        bodyYaw,
+        -0.16 + bob,
+        0.48, // 12 tall (extends down from shoulder)
+        palette.sleeve.front,
+        palette.sleeve.side,
+        "arm_left"
+      )
+    );
+    parts.push(
+      makePart(
+        rightArmX,
+        rightArmY,
+        0.08,
+        0.08, // 4 deep (true proportions)
+        bodyYaw,
+        -0.16 + bob,
+        0.48,
+        palette.sleeve.front,
+        palette.sleeve.side,
+        "arm_right"
+      )
+    );
+
+    // Legs - attached at thighs/hips (bottom of torso)
+    parts.push(
+      makePart(
+        leftLegX,
+        leftLegY,
+        0.08,
+        0.08,
+        bodyYaw,
+        -0.64 + bob,
+        0.48,
+        palette.pants.front,
+        palette.pants.side,
+        "leg_left"
+      )
+    );
+    parts.push(
+      makePart(
+        rightLegX,
+        rightLegY,
+        0.08,
+        0.08,
+        bodyYaw,
+        -0.64 + bob,
+        0.48,
+        palette.pants.front,
+        palette.pants.side,
+        "leg_right"
+      )
+    );
+
+    // Eyes are placed on the face matching the current smooth look direction.
+    const lookX = headDirX;
+    const lookY = headDirY;
+
+    if (Math.abs(lookX) > Math.abs(lookY)) {
+      if (lookX >= 0) {
+        // Looking right: eyes on +X face
+        parts.push(
+          makePart(
+            headCenterX + 0.158,
+            headCenterY - 0.030,
+            0.012,
+            0.022,
+            bodyYaw,
+            0.50 + bob,
+            0.03,
+            palette.face,
+            palette.face
+          )
+        );
+        parts.push(
+          makePart(
+            headCenterX + 0.158,
+            headCenterY + 0.030,
+            0.012,
+            0.022,
+            bodyYaw,
+            0.50 + bob,
+            0.03,
+            palette.face,
+            palette.face
+          )
+        );
+      } else {
+        // Looking left: eyes on -X face
+        parts.push(
+          makePart(
+            headCenterX - 0.158,
+            headCenterY - 0.030,
+            0.012,
+            0.022,
+            bodyYaw,
+            0.50 + bob,
+            0.03,
+            palette.face,
+            palette.face
+          )
+        );
+        parts.push(
+          makePart(
+            headCenterX - 0.158,
+            headCenterY + 0.030,
+            0.012,
+            0.022,
+            bodyYaw,
+            0.50 + bob,
+            0.03,
+            palette.face,
+            palette.face
+          )
+        );
+      }
+    } else if (lookY >= 0) {
+      // Looking front: eyes on +Y face
+      parts.push(
+        makePart(
+          headCenterX - 0.045,
+          headCenterY + 0.081,
+          0.022,
+          0.012,
+          bodyYaw,
+          0.50 + bob,
+          0.03,
+          palette.face,
+          palette.face
+        )
+      );
+      parts.push(
+        makePart(
+          headCenterX + 0.045,
+          headCenterY + 0.081,
+          0.022,
+          0.012,
+          bodyYaw,
+          0.50 + bob,
+          0.03,
+          palette.face,
+          palette.face
+        )
+      );
+    }
+
+    return parts;
+  }
+
+  intersectRayAABB2D(rayOX, rayOY, rayDX, rayDY, minX, maxX, minY, maxY) {
+    const invDX = Math.abs(rayDX) < 1e-8 ? Number.POSITIVE_INFINITY : 1 / rayDX;
+    const invDY = Math.abs(rayDY) < 1e-8 ? Number.POSITIVE_INFINITY : 1 / rayDY;
+
+    let tx1 = (minX - rayOX) * invDX;
+    let tx2 = (maxX - rayOX) * invDX;
+    let ty1 = (minY - rayOY) * invDY;
+    let ty2 = (maxY - rayOY) * invDY;
+
+    if (tx1 > tx2) {
+      const t = tx1;
+      tx1 = tx2;
+      tx2 = t;
+    }
+    if (ty1 > ty2) {
+      const t = ty1;
+      ty1 = ty2;
+      ty2 = t;
+    }
+
+    const tEnter = Math.max(tx1, ty1);
+    const tExit = Math.min(tx2, ty2);
+
+    if (tExit < 0) return null;
+    if (tEnter > tExit) return null;
+
+    const side = tx1 > ty1 ? "x" : "y";
+    return { t: tEnter, side };
+  }
+
+  intersectRayOBB2D(rayOX, rayOY, rayDX, rayDY, cx, cy, halfW, halfD, yaw) {
+    const c = Math.cos(-yaw);
+    const s = Math.sin(-yaw);
+
+    const ox = rayOX - cx;
+    const oy = rayOY - cy;
+
+    const localOX = ox * c - oy * s;
+    const localOY = ox * s + oy * c;
+    const localDX = rayDX * c - rayDY * s;
+    const localDY = rayDX * s + rayDY * c;
+
+    const hit = this.intersectRayAABB2D(
+      localOX,
+      localOY,
+      localDX,
+      localDY,
+      -halfW,
+      halfW,
+      -halfD,
+      halfD
+    );
+
+    return hit;
+  }
+
+  createZombieSpriteCache() {
+    // Try to use texture-based system if zombie skin image is loaded
+    if (window.PRELOADED_ZOMBIE_SKIN_IMAGE) {
+      return this.createZombieSpriteCacheFromTexture(window.PRELOADED_ZOMBIE_SKIN_IMAGE);
+    }
+
+    // Fallback to procedural generation
+    const width = 44;
+    const height = 62;
     const frameCount = Math.max(1, Math.floor(ZOMBIE_SPRITE_SHEET_FRAME_COUNT));
-    const skin = this.getZombieSkinImage();
 
-    const patrolFrontFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "patrol", 0)
-      : this.buildZombiePseudoAnimationFrames(patrol, width, height, frameCount, "patrol", 0);
-    const patrolLeftFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "patrol", -1)
-      : this.buildZombiePseudoAnimationFrames(patrol, width, height, frameCount, "patrol", -1);
-    const patrolRightFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "patrol", 1)
-      : this.buildZombiePseudoAnimationFrames(patrol, width, height, frameCount, "patrol", 1);
+    const patrolFrontFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "patrol", 0);
+    const patrolLeftFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "patrol", -1);
+    const patrolRightFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "patrol", 1);
 
-    const chaseFrontFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "chase", 0)
-      : this.buildZombiePseudoAnimationFrames(chase, width, height, frameCount, "chase", 0);
-    const chaseLeftFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "chase", -1)
-      : this.buildZombiePseudoAnimationFrames(chase, width, height, frameCount, "chase", -1);
-    const chaseRightFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "chase", 1)
-      : this.buildZombiePseudoAnimationFrames(chase, width, height, frameCount, "chase", 1);
+    const chaseFrontFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "chase", 0);
+    const chaseLeftFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "chase", -1);
+    const chaseRightFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "chase", 1);
 
-    const attackFrontFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "attack", 0)
-      : this.buildZombiePseudoAnimationFrames(attack, width, height, frameCount, "attack", 0);
-    const attackLeftFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "attack", -1)
-      : this.buildZombiePseudoAnimationFrames(attack, width, height, frameCount, "attack", -1);
-    const attackRightFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "attack", 1)
-      : this.buildZombiePseudoAnimationFrames(attack, width, height, frameCount, "attack", 1);
+    const attackFrontFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "attack", 0);
+    const attackLeftFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "attack", -1);
+    const attackRightFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "attack", 1);
 
-    const chargeFrontFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "charge", 0)
-      : this.buildZombiePseudoAnimationFrames(charge, width, height, frameCount, "charge", 0);
-    const chargeLeftFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "charge", -1)
-      : this.buildZombiePseudoAnimationFrames(charge, width, height, frameCount, "charge", -1);
-    const chargeRightFrames = skin
-      ? this.buildZombieSkinAnimatedFrames(width, height, frameCount, "charge", 1)
-      : this.buildZombiePseudoAnimationFrames(charge, width, height, frameCount, "charge", 1);
+    const chargeFrontFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "charge", 0);
+    const chargeLeftFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "charge", -1);
+    const chargeRightFrames = this.buildZombieVoxelAnimatedFrames(width, height, frameCount, "charge", 1);
 
     return {
       mode: "generated",
       width,
       height,
       fps: Math.max(1, ZOMBIE_SPRITE_SHEET_FPS),
-      patrol,
-      chase,
-      attack,
-      charge,
+      patrol: patrolFrontFrames[0],
+      chase: chaseFrontFrames[0],
+      attack: attackFrontFrames[0],
+      charge: chargeFrontFrames[0],
       patrolFrontFrames,
       patrolLeftFrames,
       patrolRightFrames,
@@ -2672,6 +3908,227 @@ class GameManager {
       chargeLeftFrames,
       chargeRightFrames,
     };
+  }
+
+  /**
+   * Creates sprite cache from the loaded Zombie.png texture
+   * Uses zombie-texture-mapper to extract and rotate sprites
+   */
+  createZombieSpriteCacheFromTexture(zombieTexture) {
+    // Create all 8 directional sprites from the texture
+    const directionalSprites = cacheAllZombieDirections(zombieTexture);
+
+    return {
+      mode: "texture",
+      width: 20,
+      height: 32,
+      fps: Math.max(1, ZOMBIE_SPRITE_SHEET_FPS),
+      // Default "front" sprite for initial display
+      patrol: directionalSprites.front,
+      chase: directionalSprites.front,
+      attack: directionalSprites.front,
+      charge: directionalSprites.front,
+      // Store the directional sprites for angle-based lookup
+      directionalSprites: directionalSprites,
+    };
+  }
+
+  buildZombieVoxelAnimatedFrames(width, height, frameCount, variant, headYawDir = 0) {
+    const frames = [];
+
+    const palette = this.getZombieVoxelPalette(variant);
+
+    for (let frame = 0; frame < frameCount; frame++) {
+      const data = new Uint8ClampedArray(width * height * 4);
+      const phase = (frame / frameCount) * TWO_PI;
+
+      const stride = variant === "charge" ? 3 : (variant === "chase" ? 2 : 1.4);
+      const armSwing = Math.round(Math.sin(phase) * stride);
+      const legSwing = -armSwing;
+      const bob = Math.round(Math.abs(Math.sin(phase)) * (variant === "charge" ? 2 : 1));
+      const attackLunge = variant === "attack" ? Math.max(0, Math.round(Math.sin(phase) * 2)) : 0;
+      const headYawPx = Math.round(headYawDir * ZOMBIE_HEAD_TURN_PIXELS);
+      const torsoYawPx = Math.round(headYawDir * (ZOMBIE_HEAD_TURN_PIXELS * 0.45));
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 14 + attackLunge + headYawPx,
+        y: 4 + bob,
+        width: 10,
+        height: 10,
+        depth: 3,
+      }, palette.skin);
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 14 + attackLunge + torsoYawPx,
+        y: 15 + bob,
+        width: 10,
+        height: 14,
+        depth: 3,
+      }, palette.shirt);
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 9 - armSwing + attackLunge + torsoYawPx,
+        y: 16 + bob,
+        width: 4,
+        height: 13,
+        depth: 2,
+      }, palette.sleeve);
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 25 + armSwing + attackLunge + torsoYawPx,
+        y: 16 + bob,
+        width: 4,
+        height: 13,
+        depth: 2,
+      }, palette.sleeve);
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 14 + legSwing,
+        y: 30 + bob,
+        width: 4,
+        height: 16,
+        depth: 2,
+      }, palette.pants);
+
+      this.paintVoxelCuboid(data, width, height, {
+        x: 20 - legSwing,
+        y: 30 + bob,
+        width: 4,
+        height: 16,
+        depth: 2,
+      }, palette.pants);
+
+      this.paintZombieFaceDetails(data, width, height, 14 + attackLunge + headYawPx, 4 + bob, palette.face);
+      frames.push(data);
+    }
+
+    return frames;
+  }
+
+  sampleZombieSkinTexture(partName, faceDir, u, v) {
+    // Fast pixel sampling using cached pixel array (avoid img.get() which is slow!)
+    
+    const pixelData = window.PRELOADED_ZOMBIE_SKIN_PIXELS;
+    if (!pixelData || pixelData.length === 0) {
+      return null;
+    }
+
+    // Actual coordinates from PNG generation (Face Front only)
+    const layouts = {
+      head: { x: 8, y: 8, w: 8, h: 8 },
+      torso: { x: 20, y: 20, w: 8, h: 12 },
+      arm_right: { x: 44, y: 20, w: 4, h: 12 },
+      arm_left: { x: 36, y: 52, w: 4, h: 12 },
+      leg_right: { x: 4, y: 20, w: 4, h: 12 },
+      leg_left: { x: 20, y: 52, w: 4, h: 12 },
+    };
+
+    const layout = layouts[partName];
+    if (!layout) {
+      return null;
+    }
+
+    // Map normalized [0-1] coordinates to actual texture pixels
+    const texU = layout.x + u * layout.w;
+    const texV = layout.y + v * layout.h;
+
+    const px = Math.floor(texU);
+    const py = Math.floor(texV);
+
+    // Bounds check
+    if (px < 0 || px >= 64 || py < 0 || py >= 64) {
+      return null;
+    }
+
+    // Direct array access (FAST!) instead of img.get()
+    const idx = (py * 64 + px) * 4;
+    
+    return [
+      pixelData[idx],
+      pixelData[idx + 1],
+      pixelData[idx + 2]
+    ];
+  }
+
+  getZombieVoxelPalette(variant) {
+    // Minecraft zombie colors
+    return {
+      skin: { front: [80, 110, 80], side: [60, 90, 60], top: [95, 125, 95] },        // Green zombie skin
+      shirt: { front: [100, 100, 100], side: [75, 75, 75], top: [120, 120, 120] },   // Gray shirt
+      sleeve: { front: [100, 100, 100], side: [75, 75, 75], top: [120, 120, 120] },  // Gray sleeves
+      pants: { front: [80, 80, 80], side: [60, 60, 60], top: [100, 100, 100] },      // Dark gray pants
+      face: [92, 92, 92],  // Eyes and mouth (dark gray)
+    };
+  }
+
+  paintVoxelCuboid(data, width, height, box, material) {
+    const front = material.front;
+    const side = material.side;
+    const top = material.top;
+
+    const x = Math.floor(box.x);
+    const y = Math.floor(box.y);
+    const w = Math.max(1, Math.floor(box.width));
+    const h = Math.max(1, Math.floor(box.height));
+    const d = Math.max(1, Math.floor(box.depth));
+
+    for (let yy = 0; yy < h; yy++) {
+      for (let xx = 0; xx < w; xx++) {
+        this.setVoxelPixel(data, width, height, x + xx, y + yy, front[0], front[1], front[2], 255);
+      }
+    }
+
+    for (let depth = 1; depth <= d; depth++) {
+      const ox = depth;
+      const oy = -depth;
+
+      for (let yy = 0; yy < h; yy++) {
+        this.setVoxelPixel(
+          data,
+          width,
+          height,
+          x + w - 1 + ox,
+          y + yy + oy,
+          side[0],
+          side[1],
+          side[2],
+          255
+        );
+      }
+
+      for (let xx = 0; xx < w; xx++) {
+        this.setVoxelPixel(
+          data,
+          width,
+          height,
+          x + xx + ox,
+          y + oy,
+          top[0],
+          top[1],
+          top[2],
+          255
+        );
+      }
+    }
+  }
+
+  paintZombieFaceDetails(data, width, height, headX, headY, eyeColor) {
+    const eyeY = headY + 4;
+    this.setVoxelPixel(data, width, height, headX + 2, eyeY, eyeColor[0], eyeColor[1], eyeColor[2], 255);
+    this.setVoxelPixel(data, width, height, headX + 7, eyeY, eyeColor[0], eyeColor[1], eyeColor[2], 255);
+
+    for (let x = headX + 3; x <= headX + 6; x++) {
+      this.setVoxelPixel(data, width, height, x, headY + 7, 44, 62, 40, 255);
+    }
+  }
+
+  setVoxelPixel(data, width, height, x, y, r, g, b, a = 255) {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const idx = 4 * (y * width + x);
+    data[idx] = r;
+    data[idx + 1] = g;
+    data[idx + 2] = b;
+    data[idx + 3] = a;
   }
 
   getZombieSpriteSheetImage() {
@@ -3877,6 +5334,9 @@ class GameManager {
 
   // --- First-person weapon viewmodel (3/4 perspective, pointing forward) ---
   drawFirstPersonWeapon() {
+    // Don't draw weapon in 3D mode
+    if (this.use3DMode) return;
+    
     const moving =
       isControlPressed("forward") ||
       isControlPressed("backward") ||
@@ -3891,192 +5351,235 @@ class GameManager {
 
     const s = VIEWMODEL_SCALE * Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) / 680;
 
-    // The grip sits bottom-right; the barrel converges toward screen center (= forward).
-    // "rear" = close to player (bottom-right), "front" = far away (toward center, smaller).
-    const gripX = SCREEN_WIDTH * 0.76 + bobX;
-    const gripY = SCREEN_HEIGHT + 36 * s + bobY;
-    const muzzleX = SCREEN_WIDTH * 0.50 + bobX * 0.3;
-    const muzzleY = SCREEN_HEIGHT * 0.48 + bobY * 0.15 - recoilFrac * VIEWMODEL_RECOIL_PX * 0.6;
+    // Better grip positioning - height raised, simpler viewmodel
+    const gripCenterX = SCREEN_WIDTH * 0.72 + bobX + 20;
+    const gripCenterY = SCREEN_HEIGHT * 0.55 + bobY;  // Adjusted height
+    const barrelLength = 140 * s;  // Reduced barrel length
+    const barrelAngle = -Math.PI / 2;  // Point straight up (vertical)
+    const muzzleX = gripCenterX + Math.cos(barrelAngle) * barrelLength;
+    const muzzleY = gripCenterY + Math.sin(barrelAngle) * barrelLength - recoilFrac * VIEWMODEL_RECOIL_PX;
 
-    // perspective foreshortening: rear is big, front is small
-    const rearS = s * 1.0;
-    const frontS = s * 0.35;
+    // ===== PART 1: DRAW ARM (Cubic with diagonal shading) =====
+    push();
+    stroke(0);
+    strokeWeight(2);
 
+    // Arm dimensions
+    const armWidth = 40 * s;  // Width (thickness) of arm
+    const armX1 = SCREEN_WIDTH + 40;
+    const armY1_top = SCREEN_HEIGHT - armWidth;  
+    const armY1_bot = SCREEN_HEIGHT + armWidth;  
+    const armX2 = gripCenterX + 30 * s;
+    const armY2_top = gripCenterY + 100 * s - armWidth;  
+    const armY2_bot = gripCenterY + 100 * s + armWidth;  
+
+    // Calculate middle line for diagonal split
+    const armY1_mid = (armY1_top + armY1_bot) / 2;
+    const armY2_mid = (armY2_top + armY2_bot) / 2;
+
+    // Top face (lighter - extends down to middle)
+    fill(210, 174, 144);
+    quad(
+      armX1, armY1_top,
+      armX2, armY2_top,
+      armX2, armY2_mid,
+      armX1, armY1_mid
+    );
+
+    // Bottom face (much darker - extends up to middle)
+    fill(120, 90, 60);
+    quad(
+      armX1, armY1_mid,
+      armX2, armY2_mid,
+      armX2, armY2_bot,
+      armX1, armY1_bot
+    );
+
+    // Right side face (medium transition tone)
+    // REMOVED
+
+    // Left side face (darker brown)
+    // REMOVED
+
+    // Hand triangle on the left side (skin tone)
+    // REMOVED
+
+    pop();
+
+    // ===== PART 2: PISTOL (Vertical, front-facing) =====
     push();
     noStroke();
 
-    // ── Shadow under hand ──
-    fill(0, 0, 0, 45);
-    ellipse(gripX - 10 * rearS, gripY + 20 * rearS, 260 * rearS, 70 * rearS);
-
-    // ── Forearm coming from bottom-right ──
-    fill(210, 174, 144);
+    // Compute barrel direction vectors for proper 3D perspective
+    const perpX = -Math.sin(barrelAngle);
+    const perpY = Math.cos(barrelAngle);
+    
+    // Barrel dimensions (more refined, less massive)
+    // barrelLength is already computed above
+    const barrelRadius = 10 * s;        // Thinner barrel
+    const muzzleRadius = 12 * s;        // Slightly wider muzzle
+    
+    // === BARREL (metallic cylinder pointing straight up) ===
+    // Left face of barrel (shadow - darker steel)
+    fill(110, 110, 115);
     quad(
-      SCREEN_WIDTH + 30, gripY + 40 * rearS,
-      SCREEN_WIDTH + 30, gripY - 30 * rearS,
-      gripX + 20 * rearS, gripY - 36 * rearS,
-      gripX + 20 * rearS, gripY + 30 * rearS
-    );
-    // shadow on underside
-    fill(186, 150, 122);
-    quad(
-      SCREEN_WIDTH + 30, gripY + 40 * rearS,
-      SCREEN_WIDTH + 30, gripY + 16 * rearS,
-      gripX + 20 * rearS, gripY + 10 * rearS,
-      gripX + 20 * rearS, gripY + 30 * rearS
+      gripCenterX - barrelRadius, gripCenterY,
+      muzzleX - barrelRadius, muzzleY,
+      muzzleX - barrelRadius * 0.8, muzzleY - 15 * s,
+      gripCenterX - barrelRadius * 0.8, gripCenterY - 15 * s
     );
 
-    // ── Glove / hand wrapping around the grip ──
-    fill(48, 52, 62);
+    // Right face of barrel (highlight - bright steel)
+    fill(200, 200, 205);
     quad(
-      gripX - 24 * rearS, gripY - 42 * rearS,
-      gripX + 28 * rearS, gripY - 42 * rearS,
-      gripX + 28 * rearS, gripY + 16 * rearS,
-      gripX - 24 * rearS, gripY + 16 * rearS
+      gripCenterX + barrelRadius, gripCenterY,
+      muzzleX + barrelRadius, muzzleY,
+      muzzleX + barrelRadius * 0.8, muzzleY - 15 * s,
+      gripCenterX + barrelRadius * 0.8, gripCenterY - 15 * s
     );
-    // knuckle highlight
-    fill(62, 66, 78);
-    rect(gripX - 20 * rearS, gripY - 38 * rearS, 44 * rearS, 12 * rearS, 4 * rearS);
 
-    // ── Grip (below hand, angled down) ──
-    fill(44, 40, 36);
+    // Front face of barrel (light grey)
+    fill(170, 170, 175);
     quad(
-      gripX - 18 * rearS, gripY + 16 * rearS,
-      gripX + 22 * rearS, gripY + 16 * rearS,
-      gripX + 34 * rearS, gripY + 90 * rearS,
-      gripX - 8 * rearS,  gripY + 90 * rearS
+      gripCenterX - barrelRadius * 0.8, gripCenterY - 15 * s,
+      gripCenterX + barrelRadius * 0.8, gripCenterY - 15 * s,
+      muzzleX + barrelRadius * 0.8, muzzleY - 15 * s,
+      muzzleX - barrelRadius * 0.8, muzzleY - 15 * s
     );
-    // grip texture lines
-    stroke(36, 32, 28);
+
+    // === SLIDE (top cover, dark gun metal running along barrel) ===
+    const slideWidth = 22 * s;
+    
+    // Slide top surface (dark matte finish)
+    fill(90, 90, 95);
+    quad(
+      gripCenterX - slideWidth, gripCenterY - 8 * s,
+      muzzleX - slideWidth, muzzleY - 8 * s,
+      muzzleX + slideWidth, muzzleY + 8 * s,
+      gripCenterX + slideWidth, gripCenterY + 8 * s
+    );
+
+    // Slide sides shadow
+    fill(70, 70, 75);
+    quad(
+      gripCenterX - slideWidth, gripCenterY - 8 * s,
+      gripCenterX - slideWidth * 1.1, gripCenterY,
+      muzzleX - slideWidth * 1.1, muzzleY,
+      muzzleX - slideWidth, muzzleY - 8 * s
+    );
+
+    // Slide front edge (brighter reflection)
+    fill(140, 140, 145);
+    quad(
+      gripCenterX + slideWidth, gripCenterY + 8 * s,
+      gripCenterX + slideWidth * 1.1, gripCenterY + 16 * s,
+      muzzleX + slideWidth * 1.1, muzzleY + 16 * s,
+      muzzleX + slideWidth, muzzleY + 8 * s
+    );
+
+    // === MUZZLE (opening at barrel top) ===
+    fill(50, 50, 55);
+    ellipse(muzzleX, muzzleY, muzzleRadius * 2.2, muzzleRadius * 1.8);
+    
+    // Muzzle inner shadow
+    fill(30, 30, 35);
+    ellipse(muzzleX, muzzleY, muzzleRadius * 1.4, muzzleRadius * 1.0);
+    
+    // Muzzle flash (when firing)
+    if (millis() < this.weaponFlashUntilMs) {
+      // Outer flash
+      fill(255, 180, 80, 200);
+      ellipse(muzzleX, muzzleY, muzzleRadius * 3.2, muzzleRadius * 2.5);
+      // Core flash
+      fill(255, 230, 150, 220);
+      ellipse(muzzleX, muzzleY, muzzleRadius * 2.0, muzzleRadius * 1.5);
+    }
+
+    // === GRIP (handle - vertical, held from below) ===
+    const gripWidth = 20 * s;
+    const gripLength = 70 * s;
+    
+    // Grip main body (dark brown plastic, front face)
+    fill(85, 50, 30);
+    quad(
+      gripCenterX - gripWidth, gripCenterY,
+      gripCenterX + gripWidth, gripCenterY,
+      gripCenterX + gripWidth * 0.8, gripCenterY + gripLength,
+      gripCenterX - gripWidth * 0.8, gripCenterY + gripLength
+    );
+
+    // Grip highlight/left side (lighter brown)
+    fill(120, 70, 40);
+    quad(
+      gripCenterX - gripWidth, gripCenterY,
+      gripCenterX - gripWidth * 0.9, gripCenterY + 10 * s,
+      gripCenterX - gripWidth * 0.8, gripCenterY + gripLength,
+      gripCenterX - gripWidth * 0.8, gripCenterY + gripLength - 10 * s
+    );
+
+    // Grip shadow/right side (darker)
+    fill(60, 35, 20);
+    quad(
+      gripCenterX + gripWidth, gripCenterY,
+      gripCenterX + gripWidth * 0.9, gripCenterY + 10 * s,
+      gripCenterX + gripWidth * 0.8, gripCenterY + gripLength,
+      gripCenterX + gripWidth * 0.8, gripCenterY + gripLength - 10 * s
+    );
+
+    // Grip texture lines (subtle grooves)
+    stroke(40, 25, 15);
     strokeWeight(1);
-    for (let i = 1; i <= 5; i++) {
-      const f = i / 6;
-      const gy = lerp(gripY + 20 * rearS, gripY + 86 * rearS, f);
-      const lx = lerp(gripX - 16 * rearS, gripX - 6 * rearS, f);
-      const rx = lerp(gripX + 20 * rearS, gripX + 32 * rearS, f);
-      line(lx, gy, rx, gy);
-    }
+    line(gripCenterX - 8 * s, gripCenterY + 15 * s, gripCenterX - 8 * s, gripCenterY + gripLength - 15 * s);
+    line(gripCenterX + 8 * s, gripCenterY + 15 * s, gripCenterX + 8 * s, gripCenterY + gripLength - 15 * s);
     noStroke();
 
-    // ── Trigger guard ──
-    noFill();
-    stroke(52, 48, 44);
-    strokeWeight(2.4 * rearS);
-    arc(gripX + 2 * rearS, gripY + 24 * rearS, 28 * rearS, 30 * rearS, -0.2, PI + 0.2);
-    noStroke();
-
-    // ── Trigger ──
-    fill(38, 34, 30);
-    rect(gripX - 2 * rearS, gripY + 22 * rearS, 6 * rearS, 14 * rearS, 1.5 * rearS);
-
-    // ── Gun body / receiver — trapezoid converging toward muzzle ──
-    // This is the main "barrel + slide" shape in perspective.
-    const bodyTopRear = gripY - 76 * rearS;
-    const bodyBotRear = gripY - 20 * rearS;
-    const bodyRearHalfW = 52 * rearS;
-    const bodyTopFront = muzzleY - 14 * frontS;
-    const bodyBotFront = muzzleY + 22 * frontS;
-    const bodyFrontHalfW = 14 * frontS;
-
-    // left face (darker — shadow side)
-    fill(62, 66, 78);
+    // === TRIGGER GUARD (protective loop in front) ===
+    const guardOffsetY = 15 * s;
+    
+    // Guard shadow (darker, left side)
+    fill(75, 75, 80);
     quad(
-      gripX - bodyRearHalfW, bodyTopRear,
-      muzzleX - bodyFrontHalfW, bodyTopFront,
-      muzzleX - bodyFrontHalfW, bodyBotFront,
-      gripX - bodyRearHalfW, bodyBotRear
+      gripCenterX - gripWidth * 0.6, gripCenterY + guardOffsetY,
+      gripCenterX - gripWidth * 0.8, gripCenterY + guardOffsetY + 25 * s,
+      gripCenterX + gripWidth * 0.8, gripCenterY + guardOffsetY + 25 * s,
+      gripCenterX + gripWidth * 0.6, gripCenterY + guardOffsetY
     );
 
-    // top face (brighter highlight)
-    fill(108, 114, 128);
+    // Guard highlight (lighter)
+    fill(130, 130, 135);
     quad(
-      gripX - bodyRearHalfW, bodyTopRear,
-      gripX + bodyRearHalfW, bodyTopRear,
-      muzzleX + bodyFrontHalfW, bodyTopFront,
-      muzzleX - bodyFrontHalfW, bodyTopFront
+      gripCenterX - gripWidth * 0.5, gripCenterY + guardOffsetY + 3 * s,
+      gripCenterX - gripWidth * 0.7, gripCenterY + guardOffsetY + 22 * s,
+      gripCenterX + gripWidth * 0.7, gripCenterY + guardOffsetY + 22 * s,
+      gripCenterX + gripWidth * 0.5, gripCenterY + guardOffsetY + 3 * s
     );
 
-    // right face (main visible face)
-    fill(82, 88, 100);
+    // === TRIGGER (visible inside guard) ===
+    fill(100, 100, 105);
     quad(
-      gripX + bodyRearHalfW, bodyTopRear,
-      muzzleX + bodyFrontHalfW, bodyTopFront,
-      muzzleX + bodyFrontHalfW, bodyBotFront,
-      gripX + bodyRearHalfW, bodyBotRear
+      gripCenterX - 5 * s, gripCenterY + guardOffsetY + 8 * s,
+      gripCenterX - 6 * s, gripCenterY + guardOffsetY + 16 * s,
+      gripCenterX + 6 * s, gripCenterY + guardOffsetY + 16 * s,
+      gripCenterX + 5 * s, gripCenterY + guardOffsetY + 8 * s
     );
 
-    // slide serrations on the right face (rear area)
-    fill(72, 76, 88);
-    for (let i = 0; i < 5; i++) {
-      const f = 0.55 + i * 0.08;
-      const sx = lerp(muzzleX + bodyFrontHalfW, gripX + bodyRearHalfW, f);
-      const syt = lerp(bodyTopFront, bodyTopRear, f) + 3 * lerp(frontS, rearS, f);
-      const syb = lerp(bodyBotFront, bodyBotRear, f) - 3 * lerp(frontS, rearS, f);
-      const sw = 2.5 * lerp(frontS, rearS, f);
-      rect(sx - sw / 2, syt, sw, syb - syt, 0.5);
-    }
-
-    // ejection port on the right face
-    const ejectF = 0.35;
-    const ejectX = lerp(muzzleX + bodyFrontHalfW, gripX + bodyRearHalfW, ejectF);
-    const ejectYT = lerp(bodyTopFront, bodyTopRear, ejectF);
-    const ejectYB = lerp(bodyBotFront, bodyBotRear, ejectF);
-    const ejectS = lerp(frontS, rearS, ejectF);
-    fill(38, 40, 48);
-    rect(ejectX - 10 * ejectS, ejectYT + 6 * ejectS, 20 * ejectS, (ejectYB - ejectYT) * 0.55, 2 * ejectS);
-
-    // ── Front sight (small post at the muzzle end, on top) ──
-    fill(32, 34, 40);
-    rect(muzzleX - 3 * frontS, bodyTopFront - 10 * frontS, 6 * frontS, 10 * frontS, 1 * frontS);
-
-    // ── Rear sight (two posts near grip, on top) ──
-    const rsF = 0.82;
-    const rsX = lerp(muzzleX, gripX, rsF);
-    const rsY = lerp(bodyTopFront, bodyTopRear, rsF);
-    const rsS = lerp(frontS, rearS, rsF);
-    fill(32, 34, 40);
-    rect(rsX - 12 * rsS, rsY - 9 * rsS, 5 * rsS, 9 * rsS, 1 * rsS);
-    rect(rsX + 7 * rsS, rsY - 9 * rsS, 5 * rsS, 9 * rsS, 1 * rsS);
-
-    // ── Muzzle bore (small dark ellipse at front) ──
-    fill(22, 24, 28);
-    ellipse(muzzleX, muzzleY + 4 * frontS, 18 * frontS, 16 * frontS);
-    fill(8, 8, 12);
-    ellipse(muzzleX, muzzleY + 4 * frontS, 8 * frontS, 7 * frontS);
-
-    // ── Rail on bottom face ──
-    fill(58, 62, 72);
+    // === SIGHTS/RAIL (top of slide - functional detail) ===
+    fill(70, 70, 75);
     quad(
-      gripX - bodyRearHalfW * 0.5, bodyBotRear + 2 * rearS,
-      gripX + bodyRearHalfW * 0.5, bodyBotRear + 2 * rearS,
-      muzzleX + bodyFrontHalfW * 0.4, bodyBotFront + 1 * frontS,
-      muzzleX - bodyFrontHalfW * 0.4, bodyBotFront + 1 * frontS
+      gripCenterX - 6 * s, gripCenterY - slideWidth - 5 * s,
+      gripCenterX + 6 * s, gripCenterY - slideWidth - 5 * s,
+      muzzleX + 5 * s, muzzleY - slideWidth - 5 * s,
+      muzzleX - 5 * s, muzzleY - slideWidth - 5 * s
     );
 
-    // ── Muzzle flash ──
-    if (recoilFrac > 0.02) {
-      const flashAlpha = 230 * recoilFrac;
-      const fLen = (55 + Math.random() * 35) * frontS * recoilFrac;
-      const fW = (18 + Math.random() * 14) * frontS * recoilFrac;
-      const mx = muzzleX;
-      const my = muzzleY + 4 * frontS;
-
-      // flash points upward (= into the screen = forward)
-      fill(255, 240, 160, flashAlpha);
-      triangle(mx - fW, my, mx, my - fLen, mx + fW, my);
-
-      // side star
-      fill(255, 215, 120, flashAlpha * 0.6);
-      triangle(mx, my - fLen * 0.3, mx - fW * 1.4, my - fLen * 0.6, mx + fW * 1.4, my - fLen * 0.6);
-
-      // glow
-      fill(255, 185, 95, flashAlpha * 0.5);
-      ellipse(mx, my - 4 * frontS, 32 * frontS, 28 * frontS);
-
-      // bright core
-      fill(255, 250, 210, flashAlpha * 0.75);
-      ellipse(mx, my, 14 * frontS, 12 * frontS);
-    }
+    // Rear sight
+    fill(85, 85, 90);
+    quad(
+      gripCenterX - 7 * s, gripCenterY - slideWidth - 8 * s,
+      gripCenterX + 7 * s, gripCenterY - slideWidth - 8 * s,
+      gripCenterX + 6 * s, gripCenterY - slideWidth,
+      gripCenterX - 6 * s, gripCenterY - slideWidth
+    );
 
     pop();
   }
@@ -4097,5 +5600,11 @@ class GameManager {
     line(cx - 8, cy, cx + 8, cy);
     line(cx, cy - 8, cx, cy + 8);
     pop();
+  }
+
+  // --- Horror Fog Vignette (DISABLED - using distance-based darkness instead) ---
+  drawFogVignette() {
+    // Fog is now handled via reduced ambient light and block darkness over distance
+    // No visual vignette overlay is drawn
   }
 }

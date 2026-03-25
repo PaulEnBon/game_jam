@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Betrayal Box - Nothing is Safe</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text x='0' y='14' font-size='14' font-weight='bold' fill='%23ff4444'>B</text></svg>" />
   </head>
   <body>
     <main id="app-shell">
@@ -18,6 +19,7 @@
           <p class="instruction">Click to Play</p>
           <button id="start-button" type="button" onclick="window.__startGameFallback && window.__startGameFallback(event)">Jouer</button>
           <button id="open-settings-button" type="button" onclick="window.__openSettingsFallback && window.__openSettingsFallback(event)">Paramètres</button>
+          <button id="open-localhost-button" type="button" onclick="window.__openLocalhostFallback && window.__openLocalhostFallback(event)">Lancer Localhost</button>
           <p id="control-legend" class="controls">WASD — Move &nbsp;|&nbsp; Mouse — Look &nbsp;|&nbsp; Walk over green orbs to collect</p>
           <p class="objective-hint">Survis vague après vague, active les balises, puis utilise la Punch Machine (F) pour des power-ups.</p>
         </div>
@@ -88,14 +90,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
     <!-- Game files loaded in dependency order -->
     <script src="src/config/constants.js?v=20260306d"></script>
+    <script src="assets/textures/embedded.js?v=20260306c"></script>
     <script src="src/world/embedded-textures.js?v=20260306e"></script>
     <script src="src/world/textures.js?v=20260306h"></script>
-    <script src="src/world/map.js?v=20260306e"></script>
+    <script src="src/world/map.js?v=20260306g"></script>
     <script src="src/world/embedded-zombie.js?v=20260306a"></script>
-    <script src="src/entities/player.js?v=20260306d"></script>
+    <script src="src/world/zombie-texture-mapper.js?v=20260306a"></script>
+    <script src="src/world/zombie-texture-sampling.js?v=20260306a"></script>
+    <script src="src/world/zombie-sprite-renderer.js?v=20260306a"></script>
+    <script src="src/world/floor-texture-loader.js?v=20260306a"></script>
+    <script src="src/entities/player.js?v=20260306f"></script>
     <script src="src/entities/orb.js?v=20260306d"></script>
     <script src="src/entities/particle.js?v=20260306d"></script>
-    <script src="src/systems/gamemanager.js?v=20260306n"></script>
+    <script src="src/systems/zombie-3d-model.js?v=20260306d"></script>
+    <script src="src/systems/zombie-3d-scene.js?v=20260306a"></script>
+    <!-- Rendering mode classes (loaded before GameManager) -->
+    <script src="src/systems/game-mode-base.js?v=20260306a"></script>
+    <script src="src/systems/game-mode-2d.js?v=20260306a"></script>
+    <script src="src/systems/game-mode-3d.js?v=20260306a"></script>
+    <script src="src/systems/gamemanager.js?v=20260306f"></script>
     <script src="src/app/sketch.js?v=20260306i"></script>
   </body>
 </html>

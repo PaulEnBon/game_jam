@@ -21,6 +21,7 @@ const EXTERNAL_BLOCK_TEXTURE_PATHS = Object.freeze({
   9: "assets/textures/obsidian.png",
   10: "assets/textures/plank.png",
   11: "assets/textures/obsidian.png",
+  12: null, // Floor texture (generated procedurally)
 });
 
 function resolveTexturePath(blockId) {
@@ -40,6 +41,13 @@ function preloadExternalBlockTextures() {
 
   for (const blockId of Object.keys(EXTERNAL_BLOCK_TEXTURE_PATHS)) {
     const imgPath = resolveTexturePath(blockId);
+    
+    // Skip null paths (like floor texture which is generated procedurally)
+    if (imgPath === null) {
+      preloadedExternalTextures[blockId] = null;
+      continue;
+    }
+    
     preloadedExternalTextures[blockId] = loadImage(
       imgPath,
       undefined,
@@ -85,12 +93,55 @@ function buildMissingTexturePlaceholder() {
   return tex;
 }
 
+/**
+ * Generate procedural floor texture with gray tiled pattern
+ * Smooth gradual dirt/stone look for floor blocks
+ */
+function buildFloorTexture() {
+  const tex = createGraphics(TEXTURE_SIZE, TEXTURE_SIZE);
+  tex.noSmooth();
+  tex.loadPixels();
+
+  for (let y = 0; y < TEXTURE_SIZE; y++) {
+    for (let x = 0; x < TEXTURE_SIZE; x++) {
+      const index = 4 * (y * TEXTURE_SIZE + x);
+      
+      // Large tile pattern (checkerboard every 8 pixels)
+      const tileX = Math.floor(x / 8);
+      const tileY = Math.floor(y / 8);
+      const tileCheck = (tileX + tileY) % 2;
+      
+      // Add subtle noise within tiles
+      const noiseX = (x % 8) / 8.0;
+      const noiseY = (y % 8) / 8.0;
+      const noise = Math.sin(x * 0.3) * Math.cos(y * 0.3) * 10;
+      
+      // Base gray color with tile variation
+      const baseGray = tileCheck === 0 ? 140 : 160;
+      const gray = Math.floor(baseGray + noise);
+      
+      tex.pixels[index]     = gray;      // R
+      tex.pixels[index + 1] = gray;      // G
+      tex.pixels[index + 2] = gray;      // B
+      tex.pixels[index + 3] = 255;       // A
+    }
+  }
+
+  tex.updatePixels();
+  return tex;
+}
+
 function generateAllBlockTextures() {
   blockTextures = {};
 
   for (const blockIdText of Object.keys(EXTERNAL_BLOCK_TEXTURE_PATHS)) {
     const blockId = Number(blockIdText);
-    blockTextures[blockId] = buildTextureFromPreloadedImage(blockId);
+    if (blockId === 12) {
+      // Floor texture is generated procedurally
+      blockTextures[blockId] = buildFloorTexture();
+    } else {
+      blockTextures[blockId] = buildTextureFromPreloadedImage(blockId);
+    }
   }
 }
 

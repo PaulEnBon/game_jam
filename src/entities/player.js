@@ -253,7 +253,7 @@ class Player {
     const forwardX = Math.cos(this.angle);
     const forwardY = Math.sin(this.angle);
     const strafeX  = -Math.sin(this.angle);   // perpendicular right
-    const strafeY  =  Math.cos(this.angle);
+    const strafeY  =  Math.cos(this.angle);   // perpendicular right
 
     // Combined movement vector
     let moveX = forwardInput * forwardX + strafeInput * strafeX;
@@ -320,6 +320,8 @@ class Player {
  * Checks if a circle at (cx, cy) with given radius overlaps any solid tile.
  * We test the 4 corner points of the circle's bounding box.
  * This is a simplified but robust approach for grid-based maps.
+ * 
+ * NOTE: Type 12 blocks (floor) do not block movement - they are walkable terrain.
  */
 function isWorldBlocked(cx, cy, radius) {
   const offsets = [
@@ -334,8 +336,10 @@ function isWorldBlocked(cx, cy, radius) {
     if (tileCol < 0 || tileCol >= MAP_TILE_COUNT || tileRow < 0 || tileRow >= MAP_TILE_COUNT) {
       return true; // out of bounds = blocked
     }
-    if (worldTileMap[tileRow][tileCol] !== 0) {
-      return true; // solid block
+    const tileType = worldTileMap[tileRow][tileCol];
+    // Blocks movement unless it's type 0 (empty) or type 12 (floor/terrain)
+    if (tileType !== 0 && tileType !== 12) {
+      return true; // solid block (wall)
     }
   }
   return false;

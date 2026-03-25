@@ -14,6 +14,8 @@
 */
 
 let gameManager = null;
+let webglCanvas = null;  // Separate WEBGL canvas for 3D mode
+let canvas2D = null;     // Main 2D canvas
 
 function preload() {
   preloadExternalBlockTextures();
@@ -22,8 +24,10 @@ function preload() {
 
 function setup() {
   updateViewportSize();
-  const cnv = createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
-  cnv.parent("game-container");
+  // Canvas en mode 2D par défaut (raycasting)
+  canvas2D = createCanvas(SCREEN_WIDTH, SCREEN_HEIGHT);
+  canvas2D.parent("game-container");
+  
   pixelDensity(1);              // keep pixel art sharp on Retina screens
   noSmooth();                   // blocky Minecraft aesthetic
 
@@ -32,7 +36,15 @@ function setup() {
   generateWorldMap();
 
   gameManager = new GameManager();
+  window.gameManager = gameManager;  // Expose to global window for texture loader
   gameManager.initDOM();
+
+  // Keyboard shortcut to toggle 3D mode (press '3')
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '3' && gameManager && gameManager.gameState === 'playing') {
+      gameManager.toggle3DMode();
+    }
+  });
 
   // Hard fallback bridge: called by inline onclick handlers from index.html.
   window.__startGameFallback = (event) => {
@@ -56,6 +68,43 @@ function setup() {
     return false;
   };
 
+  window.__openLocalhostFallback = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const localhostUrl = "http://localhost:5500";
+    const isAlreadyLocalhost = window.location.origin === localhostUrl;
+
+    if (isAlreadyLocalhost) {
+      if (gameManager) {
+        gameManager.requestPointerLock();
+        gameManager.startNewGame();
+      }
+      return false;
+    }
+
+    // Browser JS cannot start Node directly; open local server in a new tab.
+    // Use a native anchor click for better compatibility from file:// origins.
+    try {
+      const link = document.createElement("a");
+      link.href = localhostUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch {
+      const opened = window.open(localhostUrl, "_blank");
+      if (!opened) {
+        alert("Impossible d'ouvrir localhost automatiquement.\nLance: node serve-local.js\nPuis ouvre: http://localhost:5500");
+      }
+    }
+    return false;
+  };
+
   window.__overlayStartFallback = (event) => {
     if (!gameManager) return false;
     const target = event && event.target;
@@ -69,6 +118,7 @@ function setup() {
     gameManager.startNewGame();
     return false;
   };
+
 }
 
 function draw() {

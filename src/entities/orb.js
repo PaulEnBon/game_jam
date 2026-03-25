@@ -14,6 +14,9 @@
   patrolling before they aggro.
 */
 
+// Global ID counter for orbs (for 3D model tracking)
+let OrbIdCounter = 0;
+
 class Orb {
   /**
    * @param {number} worldX - tile-space X
@@ -22,6 +25,9 @@ class Orb {
   * @param {number} hunterSpeed - base speed when it becomes a zombie
    */
   constructor(worldX, worldY, mutationDelayMs, hunterSpeed) {
+    // Unique ID for this orb (for 3D model tracking)
+    this.id = OrbIdCounter++;
+    
     // Position (may include visual bob offset for rendering)
     this.posX = worldX;
     this.posY = worldY;
@@ -53,6 +59,12 @@ class Orb {
     this.prevPosY = worldY;
     this.moveDirX = 0;
     this.moveDirY = 1;
+    this.bodyAngle = 0;  // Look towards +Z initially (down the map)
+    this.bodyDirX = 0;
+    this.bodyDirY = 1;
+    this.lookDirX = 0;
+    this.lookDirY = 1;
+    this.lookAngle = 0;  // Match bodyAngle
 
     // Chase steering helpers
     this.strafeSeed = Math.random() * Math.PI * 2;
@@ -113,8 +125,90 @@ class Orb {
       this.moveDirX = movedX / movedLen;
       this.moveDirY = movedY / movedLen;
     }
+
+    this.updateBodyDirection(deltaSeconds);
+    this.updateLookDirection(deltaSeconds, targetPlayer);
+
     this.prevPosX = this.posX;
     this.prevPosY = this.posY;
+  }
+
+  updateLookDirection(dt, player) {
+    if (!this.isHunter()) return;
+
+    let desiredX = this.bodyDirX;
+    let desiredY = this.bodyDirY;
+
+    const moveLen = Math.hypot(this.moveDirX, this.moveDirY);
+    if (moveLen > 0.05) {
+      desiredX = this.moveDirX;
+      desiredY = this.moveDirY;
+    }
+
+    if (this.isChasing()) {
+      const dx = player.posX - this.posX;
+      const dy = player.posY - this.posY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0.0001) {
+        const toPlayerX = dx / dist;
+        const toPlayerY = dy / dist;
+        const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
+
+        // Keep looking in movement direction while navigating,
+        // then progressively face player when LOS is available.
+        const playerWeight = hasLOS ? (dist < 2.2 ? 0.9 : 0.6) : 0.2;
+        desiredX = desiredX * (1 - playerWeight) + toPlayerX * playerWeight;
+        desiredY = desiredY * (1 - playerWeight) + toPlayerY * playerWeight;
+      }
+    }
+
+    const desiredLen = Math.hypot(desiredX, desiredY);
+    if (desiredLen > 0.0001) {
+      desiredX /= desiredLen;
+      desiredY /= desiredLen;
+    }
+
+    const desiredAngle = Math.atan2(desiredY, desiredX);
+    let delta = desiredAngle - this.lookAngle;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+
+    const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
+    const turnRate = hasLOS ? 2.4 : 1.35; // rad/s
+    const maxStep = turnRate * Math.max(0.0001, dt);
+    const step = constrain(delta, -maxStep, maxStep);
+    this.lookAngle += step;
+
+    this.lookDirX = Math.cos(this.lookAngle);
+    this.lookDirY = Math.sin(this.lookAngle);
+  }
+
+  updateBodyDirection(dt) {
+    if (!this.isHunter()) return;
+
+    const moveLen = Math.hypot(this.moveDirX, this.moveDirY);
+    
+    // Always update angle towards movement direction, even if moving slowly
+    if (moveLen > 0.01) {
+      // For p5.js WEBGL rotateY: 0 = look +Z, π/2 = look +X
+      // moveDirX is X displacement, moveDirY is Z displacement
+      // So angle = atan2(X_movement, Z_movement)
+      const desiredAngle = Math.atan2(this.moveDirX, this.moveDirY);
+      let delta = desiredAngle - this.bodyAngle;
+      
+      // Normalize angle difference to [-π, π]
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+
+      // Smooth rotation with rate limiting - even faster for snappier turns
+      const turnRate = 6.0; // rad/s - increased for instant response
+      const maxStep = turnRate * Math.max(0.001, dt);
+      const step = constrain(delta, -maxStep, maxStep);
+      this.bodyAngle += step;
+    }
+
+    this.bodyDirX = Math.cos(this.bodyAngle);
+    this.bodyDirY = Math.sin(this.bodyAngle);
   }
 
   // --- SAFE : gentle bob ---
