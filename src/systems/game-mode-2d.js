@@ -115,6 +115,8 @@ class Game2DMode extends GameModeBase {
     const halfFOV = FIELD_OF_VIEW_RADIANS / 2;
     const cameraOffset = this.gameManager.cameraScreenOffsetPx();
     const rayToScreenRatio = SCREEN_WIDTH / RAY_COUNT;  // Scale rays to fill entire screen width
+    const mapWidth = this.gameManager.mapWidth;
+    const mapHeight = this.gameManager.mapHeight;
 
     for (let col = 0; col < RAY_COUNT; col++) {
       const rayScreenFraction = (col / RAY_COUNT) * 2 - 1;
@@ -169,7 +171,7 @@ class Game2DMode extends GameModeBase {
 
         stepsDone++;
 
-        if (mapX < 0 || mapX >= MAP_TILE_COUNT || mapY < 0 || mapY >= MAP_TILE_COUNT) {
+        if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) {
           hitWall = true;
           tileType = 3;
           break;
@@ -265,7 +267,7 @@ class Game2DMode extends GameModeBase {
   }
 
   /**
-   * Render all sprites (orbs, particles, modules, drops, beacons, portals, machines)
+   * Render all sprites (orbs, particles, modules, drops, portals, machines)
    * Sorts back-to-front and renders using billboard projection and Z-buffer
    */
   drawSpritesToBuffer() {
@@ -317,44 +319,18 @@ class Game2DMode extends GameModeBase {
       allSprites.push({ x: drop.posX, y: drop.posY, dist, type: "drop", obj: drop });
     }
 
-    for (const beacon of this.gameManager.missionBeacons) {
-      if (beacon.activated) continue;
-      const dx = beacon.posX - playerX;
-      const dy = beacon.posY - playerY;
-      const distSq = dx * dx + dy * dy;
-      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
-      const dist = Math.sqrt(distSq);
-      allSprites.push({ x: beacon.posX, y: beacon.posY, dist, type: "mission-beacon", obj: beacon });
-    }
-
-    if (this.gameManager.extractionPortal) {
-      const dx = this.extractionPortal.posX - playerX;
-      const dy = this.extractionPortal.posY - playerY;
+    if (this.gameManager.punchMachine) {
+      const dx = this.gameManager.punchMachine.posX - playerX;
+      const dy = this.gameManager.punchMachine.posY - playerY;
       const distSq = dx * dx + dy * dy;
       if (distSq <= MAX_SPRITE_DIST * MAX_SPRITE_DIST) {
         const dist = Math.sqrt(distSq);
         allSprites.push({
-          x: this.gameManager.extractionPortal.posX,
-          y: this.gameManager.extractionPortal.posY,
-          dist,
-          type: "extraction-portal",
-          obj: this.gameManager.extractionPortal,
-        });
-      }
-    }
-
-    if (this.punchMachine) {
-      const dx = this.punchMachine.posX - playerX;
-      const dy = this.punchMachine.posY - playerY;
-      const distSq = dx * dx + dy * dy;
-      if (distSq <= MAX_SPRITE_DIST * MAX_SPRITE_DIST) {
-        const dist = Math.sqrt(distSq);
-        allSprites.push({
-          x: this.punchMachine.posX,
-          y: this.punchMachine.posY,
+          x: this.gameManager.punchMachine.posX,
+          y: this.gameManager.punchMachine.posY,
           dist,
           type: "punch-machine",
-          obj: this.punchMachine,
+          obj: this.gameManager.punchMachine,
         });
       }
     }
@@ -400,7 +376,7 @@ class Game2DMode extends GameModeBase {
     const s = VIEWMODEL_SCALE * Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) / 680;
 
     const gripCenterX = SCREEN_WIDTH * 0.72 + bobX + 20;
-    const gripCenterY = SCREEN_HEIGHT * 0.55 + bobY;
+    const gripCenterY = SCREEN_HEIGHT * 0.62 + bobY;
     const barrelLength = 140 * s;
     const barrelAngle = -Math.PI / 2;
     const muzzleX = gripCenterX + Math.cos(barrelAngle) * barrelLength;
@@ -443,42 +419,42 @@ class Game2DMode extends GameModeBase {
     quad(
       gripCenterX - barrelRadius, gripCenterY,
       muzzleX - barrelRadius, muzzleY,
-      muzzleX - barrelRadius * 0.8, muzzleY - 15 * s,
-      gripCenterX - barrelRadius * 0.8, gripCenterY - 15 * s
+      muzzleX - barrelRadius * 0.8, muzzleY - 3 * s,
+      gripCenterX - barrelRadius * 0.8, gripCenterY - 3 * s
     );
 
     fill(200, 200, 205);
     quad(
       gripCenterX + barrelRadius, gripCenterY,
       muzzleX + barrelRadius, muzzleY,
-      muzzleX + barrelRadius * 0.8, muzzleY - 15 * s,
-      gripCenterX + barrelRadius * 0.8, gripCenterY - 15 * s
+      muzzleX + barrelRadius * 0.8, muzzleY - 3 * s,
+      gripCenterX + barrelRadius * 0.8, gripCenterY - 3 * s
     );
 
     fill(170, 170, 175);
     quad(
-      gripCenterX - barrelRadius * 0.8, gripCenterY - 15 * s,
-      gripCenterX + barrelRadius * 0.8, gripCenterY - 15 * s,
-      muzzleX + barrelRadius * 0.8, muzzleY - 15 * s,
-      muzzleX - barrelRadius * 0.8, muzzleY - 15 * s
+      gripCenterX - barrelRadius * 0.8, gripCenterY - 3 * s,
+      gripCenterX + barrelRadius * 0.8, gripCenterY - 3 * s,
+      muzzleX + barrelRadius * 0.8, muzzleY - 3 * s,
+      muzzleX - barrelRadius * 0.8, muzzleY - 3 * s
     );
 
     // Slide
     const slideWidth = 22 * s;
     fill(90, 90, 95);
     quad(
-      gripCenterX - slideWidth, gripCenterY - 8 * s,
-      muzzleX - slideWidth, muzzleY - 8 * s,
-      muzzleX + slideWidth, muzzleY + 8 * s,
-      gripCenterX + slideWidth, gripCenterY + 8 * s
+      gripCenterX - slideWidth, gripCenterY - 3 * s,
+      muzzleX - slideWidth, muzzleY - 3 * s,
+      muzzleX + slideWidth, muzzleY + 3 * s,
+      gripCenterX + slideWidth, gripCenterY + 3 * s
     );
 
     fill(70, 70, 75);
     quad(
-      gripCenterX - slideWidth, gripCenterY - 8 * s,
+      gripCenterX - slideWidth, gripCenterY - 3 * s,
       gripCenterX - slideWidth * 1.1, gripCenterY,
       muzzleX - slideWidth * 1.1, muzzleY,
-      muzzleX - slideWidth, muzzleY - 8 * s
+      muzzleX - slideWidth, muzzleY - 3 * s
     );
 
     fill(140, 140, 145);

@@ -212,6 +212,10 @@ class Player {
     this.verticalVelocity = 0;
     this.isGrounded = true;
     this.jumpLatch = false;
+
+    // Sensitivity multipliers (can be changed by settings)
+    this.rotateSensitivity = PLAYER_ROTATE_SPEED;
+    this.pitchSensitivity = PLAYER_PITCH_SPEED;
   }
 
   /** Reset position and angle for a new game. */
@@ -304,8 +308,8 @@ class Player {
 
   lookByMouseDelta(deltaX, deltaY) {
     const sensitivity = getLookSensitivity();
-    this.angle += deltaX * PLAYER_ROTATE_SPEED * sensitivity;
-    this.pitch -= deltaY * PLAYER_PITCH_SPEED * sensitivity;
+    this.angle += deltaX * this.rotateSensitivity * sensitivity;
+    this.pitch -= deltaY * this.pitchSensitivity * sensitivity;
     this.pitch = constrain(this.pitch, -PLAYER_MAX_PITCH, PLAYER_MAX_PITCH);
   }
 

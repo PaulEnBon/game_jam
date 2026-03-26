@@ -10,10 +10,10 @@
 let SCREEN_WIDTH  = window.innerWidth;
 let SCREEN_HEIGHT = window.innerHeight;
 
-// --- Map (tile grid) ---
-const MAP_TILE_COUNT  = 56;          // 56 × 56 tiles (expanded arena)
+// --- Map (tile grid) - Dynamic based on wave ---
+let MAP_TILE_COUNT  = 40;            // Wave 1 starts at 40x40, grows +2 per wave
 const TILE_SIZE       = 1;           // each tile = 1 world-unit
-const MAP_SIZE        = MAP_TILE_COUNT * TILE_SIZE;
+let MAP_SIZE        = MAP_TILE_COUNT * TILE_SIZE;
 
 // --- Textures ---
 const TEXTURE_SIZE = 32;             // 32 × 32 pixel textures (blocky look)
@@ -21,7 +21,7 @@ const TEXTURE_SIZE = 32;             // 32 × 32 pixel textures (blocky look)
 // --- Raycaster ---
 const FIELD_OF_VIEW_RADIANS       = Math.PI / 3;   // 60° horizontal FOV
 let RAY_COUNT                     = Math.min(SCREEN_WIDTH, 640);   // max 640 rays for perf, less on small screens
-const MAX_RAY_DISTANCE            = 78;
+const MAX_RAY_DISTANCE            = 40;   // Reduced from 78 for closer render distance
 const WALL_HEIGHT_PROJECTION_FACTOR = 1.0;
 
 function updateViewportSize() {
@@ -64,6 +64,14 @@ const PLAYER_RADIUS       = 0.25;   // collision cylinder radius
 const PLAYER_JUMP_VELOCITY = 5.2;
 const PLAYER_GRAVITY       = 14.5;
 
+// --- Settings (Player Sensitivity & Audio) ---
+const SETTINGS_SENSITIVITY_MIN     = 0.3;   // minimum sensitivity multiplier
+const SETTINGS_SENSITIVITY_MAX     = 2.0;   // maximum sensitivity multiplier
+const SETTINGS_SENSITIVITY_DEFAULT = 1.0;   // default sensitivity (100%)
+const SETTINGS_VOLUME_MIN          = 0.0;   // muted
+const SETTINGS_VOLUME_MAX          = 1.0;   // full volume
+const SETTINGS_VOLUME_DEFAULT      = 0.7;   // default volume (70%)
+
 // Camera vertical projection helpers
 const CAMERA_PITCH_PIXEL_RATIO = 0.50; // multiplied by screen height (increased for better downward view)
 const CAMERA_JUMP_PIXEL_RATIO  = 0.22; // multiplied by screen height
@@ -89,8 +97,8 @@ const POWERUP_INSTAKILL_DURATION_MS = 9000;
 const SPRINT_SPEED_MULTIPLIER   = 1.65;
 const SPRINT_ENERGY_MAX         = 100;
 const SPRINT_DRAIN_PER_SECOND   = 46;
-const SPRINT_REGEN_PER_SECOND   = 30;
-const SPRINT_REGEN_DELAY_MS     = 650;
+const SPRINT_REGEN_PER_SECOND   = 52;
+const SPRINT_REGEN_DELAY_MS     = 400;
 
 // --- Kill streak ---
 const KILL_STREAK_WINDOW_MS       = 5200;
@@ -111,7 +119,7 @@ const ORB_WORLD_RADIUS     = 0.3;
 const ENEMY_WORLD_RADIUS   = 0.60;  // Covers arms at ±0.24 + width 0.08 + animation margin
 const MIN_MUTATION_DELAY_MS = 4500;
 const MAX_MUTATION_DELAY_MS = 7000;
-const ENEMY_BASE_SPEED      = 1.6;
+const ENEMY_BASE_SPEED      = 1.45;
 const ENEMY_SPEED_GROWTH    = 0.08;  // per second survived
 
 // --- Hunter AI behaviour ---
@@ -135,20 +143,31 @@ const ZOMBIE_HEAD_TURN_PIXELS = 2;
 
 // --- Wave mode (COD-like zombies) ---
 const WAVE_START_DELAY_MS           = 2600;
-const WAVE_BREAK_DURATION_MS        = 8200;
+const WAVE_BREAK_DURATION_MS        = 2000;  // Reduced from 8200ms for faster transitions
 const WAVE_BASE_ENEMY_COUNT         = 6;
 const WAVE_ENEMY_GROWTH_LINEAR      = 3;
 const WAVE_MAX_SIMULTANEOUS_BASE    = 4;
-const WAVE_MAX_SIMULTANEOUS_GROWTH  = 1;
-const WAVE_MAX_SIMULTANEOUS_CAP     = 22;
+const WAVE_MAX_SIMULTANEOUS_GROWTH  = 1.2;
+const WAVE_MAX_SIMULTANEOUS_CAP     = 999;  // Effectively no cap for infinite scaling
 const WAVE_SPAWN_INTERVAL_BASE_MS   = 1100;
-const WAVE_SPAWN_INTERVAL_MIN_MS    = 260;
-const WAVE_SPAWN_INTERVAL_DECAY_MS  = 65;
-const WAVE_ENEMY_SPEED_PER_WAVE     = 0.11;
+const WAVE_SPAWN_INTERVAL_MIN_MS    = 80;  // Faster minimum for infinite waves
+const WAVE_SPAWN_INTERVAL_DECAY_MS  = 90;
+const WAVE_ENEMY_SPEED_PER_WAVE     = 0.09;
 const WAVE_HEALTH_STEP_WAVES        = 3;
 const WAVE_CLEAR_REWARD_SCORE       = 220;
 const WAVE_CLEAR_REWARD_SCORE_PER_WAVE = 110;
 const WAVE_CLEAR_REWARD_AMMO        = 2;
+
+// --- Difficulty Progression (kills required to end wave, corruption speed, points per wave) ---
+const DIFFICULTY_WAVE_1_KILLS       = 3;    // First wave: kill 3 zombies to end (3 spawn)
+const DIFFICULTY_WAVE_2_KILLS       = 6;    // Second wave: kill 6 (6 spawn)
+const DIFFICULTY_WAVE_3_KILLS       = 7;    // Third wave: kill 7 (about 7 spawn)
+const DIFFICULTY_SCALE_KILLS        = 1.3;  // From wave 4+: growth multiplier per wave (slightly lower)
+const DIFFICULTY_CORRUPTION_DELAY_MS_WAVE_1 = 20000;  // First wave: corruption starts after 20s
+const DIFFICULTY_CORRUPTION_INTERVAL_BASE = 8;  // Early waves: slower corruption
+const DIFFICULTY_POINTS_MULTIPLIER_WAVE_1 = 0.60;  // First wave: 60% of normal points
+const DIFFICULTY_POINTS_MULTIPLIER_WAVE_2 = 0.75;  // Second wave: 75% points
+const DIFFICULTY_POINTS_MULTIPLIER_WAVE_3 = 0.90;  // Third wave: 90% points
 
 // --- Punch Machine (power-ups) ---
 const PUNCH_MACHINE_RADIUS          = 0.42;
@@ -171,14 +190,6 @@ const SURVIVAL_POINTS_PER_SECOND = 30;
 const ORB_COLLECT_BONUS          = 500;
 const ORB_SAFE_AMMO_RECOVERY     = 1;
 const ORB_WARNING_AMMO_RECOVERY  = 2;
-
-// --- Mission objective ---
-const MISSION_BEACON_COUNT          = 4;
-const MISSION_BEACON_RADIUS         = 0.32;
-const MISSION_BEACON_SCORE_BONUS    = 420;
-const MISSION_BEACON_AMMO_RECOVERY  = 2;
-const EXTRACTION_PORTAL_RADIUS      = 0.58;
-const EXTRACTION_PORTAL_SCORE_BONUS = 1800;
 
 // --- Mob drops ---
 const MOB_DROP_RADIUS         = 0.24;

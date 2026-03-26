@@ -127,12 +127,12 @@ class GameManager {
     this.gameState = "waiting";  // "waiting" | "playing" | "paused" | "game-over"
     console.log("🎮 GameManager initialized - state: waiting");
     this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
+    this.mapWidth = MAP_TILE_COUNT;   // Initialize map dimensions
+    this.mapHeight = MAP_TILE_COUNT;  // Will update when map resizes per wave
     this.orbs = [];
     this.particles = [];
     this.worldModules = [];
     this.drops = [];
-    this.missionBeacons = [];
-    this.extractionPortal = null;
     this.punchMachine = null;
 
     this.inventory = {
@@ -159,6 +159,7 @@ class GameManager {
     this.waveEnemiesTotal = 0;
     this.waveEnemiesSpawned = 0;
     this.waveEnemiesKilled = 0;
+    this.waveKillsRequired = 0;  // Kills needed to complete the wave
     this.waveMaxSimultaneous = 0;
     this.waveSpawnIntervalMs = 0;
     this.nextWaveActionMs = 0;
@@ -171,8 +172,6 @@ class GameManager {
     this.powerRapidUntilMs = 0;
     this.powerInstakillUntilMs = 0;
     this.punchMachineInteractLatch = false;
-
-    this.beaconsActivated = 0;
 
     // Weapon
     this.weaponAmmo = WEAPON_START_AMMO;
@@ -250,6 +249,10 @@ class GameManager {
     this.prevPlayerPosX = this.player.posX;
     this.prevPlayerPosY = this.player.posY;
     this.prevPlayerAngle = this.player.angle;
+    
+    // Settings - Sensitivity & Audio
+    this.playerSensitivity = SETTINGS_SENSITIVITY_DEFAULT;  // multiplier for look speed
+    this.masterVolume = SETTINGS_VOLUME_DEFAULT;  // 0.0 to 1.0
     
     // Floor texture for 3D mode
     this.floorTexture = null;
@@ -447,6 +450,8 @@ class GameManager {
     this.settingsStatusEl = document.getElementById("settings-status");
     this.sensitivityInput = document.getElementById("sensitivity-input");
     this.sensitivityValueEl = document.getElementById("sensitivity-value");
+    this.volumeInput = document.getElementById("volume-input");
+    this.volumeValueEl = document.getElementById("volume-value");
     this.controlLegendEl  = document.getElementById("control-legend");
     this.bindButtons      = Array.from(document.querySelectorAll(".bind-button"));
     this.canvasEl         = document.querySelector("canvas");
@@ -503,6 +508,12 @@ class GameManager {
     if (this.sensitivityInput) {
       this.sensitivityInput.addEventListener("input", () => {
         this.handleSensitivityInput(this.sensitivityInput.value);
+      });
+    }
+
+    if (this.volumeInput) {
+      this.volumeInput.addEventListener("input", () => {
+        this.handleVolumeInput(this.volumeInput.value);
       });
     }
 
@@ -596,6 +607,59 @@ class GameManager {
 
     if (this.gameState === "paused") {
       this.resumeGame();
+    }
+  }
+
+  // Toggle pause with 'P' key
+  togglePause() {
+    if (this.gameState === "playing") {
+      this.pauseGame();
+    } else if (this.gameState === "paused") {
+      this.resumeGame();
+    }
+  }
+
+  // Set player sensitivity (0.3 to 2.0, default 1.0)
+  setSensitivity(value) {
+    const sensitivity = constrain(value, SETTINGS_SENSITIVITY_MIN, SETTINGS_SENSITIVITY_MAX);
+    this.playerSensitivity = sensitivity;
+    if (this.player) {
+      this.player.rotateSensitivity = PLAYER_ROTATE_SPEED * sensitivity;
+      this.player.pitchSensitivity = PLAYER_PITCH_SPEED * sensitivity;
+    }
+    localStorage.setItem("betrayalbox_sensitivity", sensitivity.toString());
+  }
+
+  // Get current sensitivity
+  getSensitivity() {
+    return this.playerSensitivity;
+  }
+
+  // Set master volume (0.0 to 1.0)
+  setVolume(value) {
+    const volume = constrain(value, SETTINGS_VOLUME_MIN, SETTINGS_VOLUME_MAX);
+    this.masterVolume = volume;
+    // Apply volume to all sound effects if they exist
+    if (window.audioContext) {
+      window.audioContext.masterGain?.gain?.setValueAtTime(volume, window.audioContext.currentTime);
+    }
+    localStorage.setItem("betrayalbox_volume", volume.toString());
+  }
+
+  // Get current volume
+  getVolume() {
+    return this.masterVolume;
+  }
+
+  // Load saved settings from localStorage
+  loadSavedSettings() {
+    const savedSensitivity = localStorage.getItem("betrayalbox_sensitivity");
+    if (savedSensitivity) {
+      this.setSensitivity(parseFloat(savedSensitivity));
+    }
+    const savedVolume = localStorage.getItem("betrayalbox_volume");
+    if (savedVolume) {
+      this.setVolume(parseFloat(savedVolume));
     }
   }
 
@@ -827,6 +891,14 @@ class GameManager {
     }
   }
 
+  handleVolumeInput(rawValue) {
+    const newValue = parseFloat(rawValue);
+    this.setVolume(newValue);
+    if (this.volumeValueEl) {
+      this.volumeValueEl.textContent = Math.round(newValue * 100) + "%";
+    }
+  }
+
   onViewportResize() {
     this.zBuffer = new Float32Array(RAY_COUNT);
     this.rayDirXBuffer = new Float32Array(RAY_COUNT);
@@ -843,6 +915,10 @@ class GameManager {
   startNewGame() {
     this.closeSettingsMenu();
     this.hidePauseOverlay();
+    
+    // Load saved settings (sensitivity, volume)
+    this.loadSavedSettings();
+    
     generateWorldMap();
 
     const now = millis();
@@ -874,6 +950,7 @@ class GameManager {
     this.waveEnemiesTotal = 0;
     this.waveEnemiesSpawned = 0;
     this.waveEnemiesKilled = 0;
+    this.waveKillsRequired = 0;  // Kills needed to complete the wave
     this.waveMaxSimultaneous = 0;
     this.waveSpawnIntervalMs = 0;
     this.nextWaveActionMs = now + WAVE_START_DELAY_MS;
@@ -884,9 +961,6 @@ class GameManager {
     this.powerRapidUntilMs = 0;
     this.powerInstakillUntilMs = 0;
     this.punchMachineInteractLatch = false;
-    this.beaconsActivated = 0;
-    this.missionBeacons = [];
-    this.extractionPortal = null;
     this.punchMachine = null;
     this.weaponAmmo = WEAPON_START_AMMO;
     this.weaponLastShotMs = 0;
@@ -907,11 +981,7 @@ class GameManager {
     if (this.motionBlurBuffer) this.motionBlurBuffer.clear();
 
     this.spawnInitialWorldModules();
-    this.spawnMissionBeacons();
     this.spawnPunchMachine();
-    if (this.missionBeacons.length === 0) {
-      this.spawnExtractionPortal();
-    }
 
     // Hide overlays
     if (this.startOverlay) this.startOverlay.style.display = "none";
@@ -1021,8 +1091,6 @@ class GameManager {
     if (this.gameState !== "playing") return;
     this.handleDropCollisions();
     if (this.gameState !== "playing") return;
-    this.handleMissionCollisions();
-    if (this.gameState !== "playing") return;
     this.updateKillStreakState();
     this.score += SURVIVAL_POINTS_PER_SECOND * dt;
   }
@@ -1131,7 +1199,12 @@ class GameManager {
     const now = millis();
 
     if (this.waveState === "preparing") {
+      const timeUntilNext = this.nextWaveActionMs - now;
+      if (timeUntilNext <= 100 && timeUntilNext > 0) {
+        console.log(`⏳ Wave ${this.waveNumber} buffer: ${timeUntilNext.toFixed(0)}ms until next wave`);
+      }
       if (now >= this.nextWaveActionMs) {
+        console.log(`🚀 Transitioning from preparing → spawning for Wave ${this.waveNumber + 1}`);
         this.startNextWave();
       }
       return;
@@ -1162,10 +1235,11 @@ class GameManager {
     }
 
     const aliveAfter = this.countAliveHunters();
+    // Only check wave completion if wave has actually started (waveNumber > 0)
     if (
+      this.waveNumber > 0 &&
       this.waveEnemiesSpawned >= this.waveEnemiesTotal &&
-      this.waveEnemiesKilled >= this.waveEnemiesTotal &&
-      aliveAfter === 0
+      this.waveEnemiesKilled >= this.waveKillsRequired
     ) {
       this.completeCurrentWave();
     }
@@ -1173,30 +1247,103 @@ class GameManager {
 
   startNextWave() {
     this.waveNumber += 1;
+    
+    // Update map size based on wave difficulty
+    this.updateMapSizeForWave();
+    
+    // RESET corruption (lava) at each wave start
+    this.corruptionLayer = 0;
+    this.pendingCorruptionTiles = [];
+    this.lastCorruptionTime = 0;
+    
+    // Calculate zombie count with reduced difficulty for early waves
+    let baseCount = WAVE_BASE_ENEMY_COUNT;
+    if (this.waveNumber === 1) baseCount = 3;  // Wave 1: 3 zombies to match 3 kills required
+    else if (this.waveNumber === 2) baseCount = 6;  // Wave 2: 6 zombies to match 6 kills required
+    else baseCount = WAVE_BASE_ENEMY_COUNT;  // Wave 3+: normal
+    
     this.waveEnemiesTotal =
-      WAVE_BASE_ENEMY_COUNT +
-      (this.waveNumber - 1) * WAVE_ENEMY_GROWTH_LINEAR +
-      Math.floor(Math.pow(this.waveNumber, 1.2));
+      baseCount +
+      Math.max(0, this.waveNumber - 3) * WAVE_ENEMY_GROWTH_LINEAR +
+      Math.floor(Math.pow(Math.max(0, this.waveNumber - 2), 1.2));
+    
     this.waveEnemiesSpawned = 0;
     this.waveEnemiesKilled = 0;
+    
+    // Calculate kills required to end the wave
+    this.waveKillsRequired = this.calculateKillsRequiredForWave();
+    
     this.waveMaxSimultaneous = Math.min(
       WAVE_MAX_SIMULTANEOUS_CAP,
-      WAVE_MAX_SIMULTANEOUS_BASE + Math.floor((this.waveNumber - 1) * WAVE_MAX_SIMULTANEOUS_GROWTH)
+      WAVE_MAX_SIMULTANEOUS_BASE + Math.floor(Math.max(0, this.waveNumber - 2) * WAVE_MAX_SIMULTANEOUS_GROWTH)
     );
     this.waveSpawnIntervalMs = Math.max(
       WAVE_SPAWN_INTERVAL_MIN_MS,
-      WAVE_SPAWN_INTERVAL_BASE_MS - (this.waveNumber - 1) * WAVE_SPAWN_INTERVAL_DECAY_MS
+      WAVE_SPAWN_INTERVAL_BASE_MS - Math.max(0, this.waveNumber - 2) * WAVE_SPAWN_INTERVAL_DECAY_MS
     );
 
     this.waveState = "spawning";
     this.nextWaveActionMs = millis() + 500;
-    this.pushHudToast(`VAGUE ${this.waveNumber} en approche`, [255, 145, 110]);
+    this.pushHudToast(`VAGUE ${this.waveNumber} - Tuez ${this.waveKillsRequired} zombies`, [255, 145, 110]);
     this.addScreenShake(2.6, 180);
+  }
+  
+  updateMapSizeForWave() {
+    // Scale map size: progressively increase by 2 tiles per wave
+    // Wave 1: 40x40 (initial), Wave 2: 42x42, Wave 3: 44x44, ... (infinite)
+    let newMapSize = 40 + (this.waveNumber - 1) * 2;
+    
+    // Skip on wave 1 - map already generated at game start
+    if (this.waveNumber === 1) return;
+    
+    // Only regenerate if size actually changed
+    if (MAP_TILE_COUNT === newMapSize) return;
+    
+    MAP_TILE_COUNT = newMapSize;
+    MAP_SIZE = MAP_TILE_COUNT * TILE_SIZE;
+    this.mapWidth = newMapSize;   // Update instance variables
+    this.mapHeight = newMapSize;  // to match MAP_TILE_COUNT
+    
+    // Regenerate the world map with new size
+    generateWorldMap();
+    console.log(`🗺️ updateMapSizeForWave: MAP_TILE_COUNT=${MAP_TILE_COUNT}, this.mapWidth=${this.mapWidth}, this.mapHeight=${this.mapHeight}`);
+    
+    // Clear collectible orbs (safe/warning) to respawn them in new map
+    // Keep wave hunters (patrol/chase) for continuity
+    this.orbs = this.orbs.filter(orb => orb.state === "patrol" || orb.state === "chase");
+    
+    // Regenerate world modules in the new map size
+    this.worldModules = [];
+    this.spawnInitialWorldModules();
+    
+    // Recenter player at actual middle of new map (not constant MAP_TILE_COUNT!)
+    const centerPos = this.mapWidth / 2 + 0.5;
+    this.player.posX = centerPos;
+    this.player.posY = centerPos;
+    console.log(`🗺️ Map resized: ${newMapSize}×${newMapSize}, player recentered at (${centerPos}, ${centerPos})`);
+    
+    this.pushHudToast(`Carte: ${newMapSize}×${newMapSize} tuiles`, [180, 220, 255]);
+  }
+  
+  calculateKillsRequiredForWave() {
+    if (this.waveNumber === 1) return DIFFICULTY_WAVE_1_KILLS;
+    if (this.waveNumber === 2) return DIFFICULTY_WAVE_2_KILLS;
+    if (this.waveNumber === 3) return DIFFICULTY_WAVE_3_KILLS;
+    // From wave 4 onwards: exponential growth
+    return Math.floor(DIFFICULTY_WAVE_3_KILLS * Math.pow(DIFFICULTY_SCALE_KILLS, this.waveNumber - 3));
   }
 
   completeCurrentWave() {
-    const rewardScore =
-      WAVE_CLEAR_REWARD_SCORE + this.waveNumber * WAVE_CLEAR_REWARD_SCORE_PER_WAVE;
+    // Apply difficulty multiplier to rewards
+    let pointMultiplier = 1.0;
+    if (this.waveNumber === 1) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_1;
+    else if (this.waveNumber === 2) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_2;
+    else if (this.waveNumber === 3) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_3;
+    // Wave 4+ gets full points
+    
+    const rewardScore = Math.floor(
+      (WAVE_CLEAR_REWARD_SCORE + this.waveNumber * WAVE_CLEAR_REWARD_SCORE_PER_WAVE) * pointMultiplier
+    );
     this.score += rewardScore;
 
     const rewardAmmo = WAVE_CLEAR_REWARD_AMMO + Math.floor(this.waveNumber / 4);
@@ -1205,10 +1352,12 @@ class GameManager {
     if (this.waveNumber % 3 === 0) {
       this.spawnWorldModule();
     }
-
+    
+    // Directly transition to next wave (no portal)
     this.waveState = "preparing";
-    this.nextWaveActionMs = millis() + WAVE_BREAK_DURATION_MS;
-    this.pushHudToast(`Vague ${this.waveNumber} nettoyée`, [145, 230, 255]);
+    this.nextWaveActionMs = millis() + 1800;  // 1.8 second break before next wave
+    this.pushHudToast(`Vague ${this.waveNumber} complétée! ${rewardScore} points - Prochaine vague en cours...`, [145, 230, 255]);
+    this.addScreenShake(2.0, 140);
   }
 
   countAliveHunters() {
@@ -1247,54 +1396,38 @@ class GameManager {
   }
 
   findWaveSpawnSpot() {
-    const reachableMask = this.buildReachableTileMaskFromPlayer();
-    let bestSpot = null;
+    // Pure random spawn anywhere on map, with 5.0 tile minimum distance from player
+    const MIN_DISTANCE_FROM_PLAYER = 5.0;
+    const MAX_ATTEMPTS = 200;
 
-    for (let attempt = 0; attempt < 180; attempt++) {
-      const lane = 2 + Math.floor(Math.random() * 3); // 2..4 tiles from border
-      const side = Math.floor(Math.random() * 4);
-      let row = 0;
-      let col = 0;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Pick random tile anywhere in the map
+      const col = Math.floor(Math.random() * (this.mapWidth - 2)) + 1;
+      const row = Math.floor(Math.random() * (this.mapHeight - 2)) + 1;
 
-      if (side === 0) {
-        row = lane;
-        col = 2 + Math.floor(Math.random() * (MAP_TILE_COUNT - 4));
-      } else if (side === 1) {
-        row = MAP_TILE_COUNT - 1 - lane;
-        col = 2 + Math.floor(Math.random() * (MAP_TILE_COUNT - 4));
-      } else if (side === 2) {
-        col = lane;
-        row = 2 + Math.floor(Math.random() * (MAP_TILE_COUNT - 4));
-      } else {
-        col = MAP_TILE_COUNT - 1 - lane;
-        row = 2 + Math.floor(Math.random() * (MAP_TILE_COUNT - 4));
-      }
-
+      // Must be walkable
       if (!this.isWalkableTile(row, col)) continue;
 
-      const tileIndex = row * MAP_TILE_COUNT + col;
-      if (reachableMask[tileIndex] !== 1) continue;
-
+      // Must have at least 2 open neighbors (not in a tight corner)
       const openNeighbors = this.countOpenCardinalNeighbors(row, col);
       if (openNeighbors < 2) continue;
 
       const x = col + 0.5;
       const y = row + 0.5;
+
+      // Must be at least 5 tiles away from player
       const distToPlayer = Math.hypot(x - this.player.posX, y - this.player.posY);
-      if (distToPlayer < 7.2) continue;
+      if (distToPlayer < MIN_DISTANCE_FROM_PLAYER) continue;
+
+      // Can't spawn on other orbs
       if (this.orbs.some((orb) => Math.hypot(x - orb.posX, y - orb.posY) < 1.2)) continue;
 
-      const score = distToPlayer + openNeighbors * 0.45 + Math.random() * 0.24;
-      if (!bestSpot || score > bestSpot.score) {
-        bestSpot = { x, y, score };
-      }
+      // Found valid spot!
+      return { x, y };
     }
 
-    if (bestSpot) {
-      return { x: bestSpot.x, y: bestSpot.y };
-    }
-
-    return this.findFreeWorldSpot(6.8);
+    // Fallback if no spot found
+    return this.findFreeWorldSpot(5.0);
   }
 
   // --- Punch Machine ---
@@ -1406,97 +1539,10 @@ class GameManager {
     }
   }
 
-  spawnMissionBeacons() {
-    this.missionBeacons = [];
-    this.beaconsActivated = 0;
-    this.extractionPortal = null;
 
-    const minSpacing = 4.5;
-    let attempts = 0;
-    while (this.missionBeacons.length < MISSION_BEACON_COUNT && attempts < 240) {
-      attempts++;
-      const pos = this.findFreeWorldSpot(4.8);
-      if (!pos) continue;
-      const tooClose = this.missionBeacons.some(
-        (beacon) => Math.hypot(pos.x - beacon.posX, pos.y - beacon.posY) < minSpacing
-      );
-      if (tooClose) continue;
-
-      this.missionBeacons.push({
-        posX: pos.x,
-        posY: pos.y,
-        radius: MISSION_BEACON_RADIUS,
-        activated: false,
-        pulseOffset: Math.random() * TWO_PI,
-      });
-    }
-
-    while (this.missionBeacons.length < MISSION_BEACON_COUNT) {
-      const pos = this.findFreeWorldSpot(2.6);
-      if (!pos) break;
-      this.missionBeacons.push({
-        posX: pos.x,
-        posY: pos.y,
-        radius: MISSION_BEACON_RADIUS,
-        activated: false,
-        pulseOffset: Math.random() * TWO_PI,
-      });
-    }
-  }
-
-  spawnExtractionPortal() {
-    if (this.extractionPortal) return;
-    const pos = this.findFreeWorldSpot(5.4) || this.findFreeWorldSpot(3);
-    if (!pos) return;
-
-    this.extractionPortal = {
-      posX: pos.x,
-      posY: pos.y,
-      radius: EXTRACTION_PORTAL_RADIUS,
-      spawnMs: millis(),
-    };
-
-    this.pushHudToast("Extraction prête: rejoins la faille !", [150, 255, 200]);
-    this.addScreenShake(3.5, 280);
-    this.spawnCollectParticles(pos.x, pos.y, [130, 255, 200]);
-  }
-
-  getNearestUnactivatedBeacon() {
-    let best = null;
-    for (const beacon of this.missionBeacons) {
-      if (beacon.activated) continue;
-      const dist = Math.hypot(beacon.posX - this.player.posX, beacon.posY - this.player.posY);
-      if (!best || dist < best.dist) {
-        best = { beacon, dist };
-      }
-    }
-    return best;
-  }
 
   getCurrentObjectiveTarget() {
-    const nearestBeacon = this.getNearestUnactivatedBeacon();
-    if (nearestBeacon) {
-      return {
-        x: nearestBeacon.beacon.posX,
-        y: nearestBeacon.beacon.posY,
-        dist: nearestBeacon.dist,
-        label: "BALISE",
-      };
-    }
-
-    if (this.extractionPortal) {
-      return {
-        x: this.extractionPortal.posX,
-        y: this.extractionPortal.posY,
-        dist: Math.hypot(
-          this.extractionPortal.posX - this.player.posX,
-          this.extractionPortal.posY - this.player.posY
-        ),
-        label: "EXTRACT",
-      };
-    }
-
-    return null;
+    return null;  // No objectives in wave mode
   }
 
   updateWorldModules(dt) {
@@ -1540,7 +1586,7 @@ class GameManager {
   }
 
   isWalkableTile(row, col) {
-    if (row <= 0 || row >= MAP_TILE_COUNT - 1 || col <= 0 || col >= MAP_TILE_COUNT - 1) {
+    if (row <= 0 || row >= this.mapHeight - 1 || col <= 0 || col >= this.mapWidth - 1) {
       return false;
     }
     return worldTileMap[row][col] === 0;
@@ -1556,7 +1602,7 @@ class GameManager {
   }
 
   buildReachableTileMaskFromPlayer() {
-    const tileTotal = MAP_TILE_COUNT * MAP_TILE_COUNT;
+    const tileTotal = this.mapWidth * this.mapHeight;
     const mask = new Uint8Array(tileTotal);
 
     const startCol = Math.floor(this.player.posX);
@@ -1566,7 +1612,7 @@ class GameManager {
     }
 
     const queue = [{ row: startRow, col: startCol }];
-    mask[startRow * MAP_TILE_COUNT + startCol] = 1;
+    mask[startRow * this.mapWidth + startCol] = 1;
 
     for (let head = 0; head < queue.length; head++) {
       const tile = queue[head];
@@ -1581,7 +1627,7 @@ class GameManager {
       for (const next of neighbors) {
         if (!this.isWalkableTile(next.row, next.col)) continue;
 
-        const idx = next.row * MAP_TILE_COUNT + next.col;
+        const idx = next.row * this.mapWidth + next.col;
         if (mask[idx] === 1) continue;
 
         mask[idx] = 1;
@@ -1594,8 +1640,8 @@ class GameManager {
 
   findFreeWorldSpot(minDistanceFromPlayer = 2.8) {
     for (let attempt = 0; attempt < 90; attempt++) {
-      const col = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
-      const row = Math.floor(Math.random() * (MAP_TILE_COUNT - 4)) + 2;
+      const col = Math.floor(Math.random() * (this.mapWidth - 4)) + 2;
+      const row = Math.floor(Math.random() * (this.mapHeight - 4)) + 2;
       if (!this.isWalkableTile(row, col)) continue;
 
       const x = col + 0.5;
@@ -1604,8 +1650,6 @@ class GameManager {
       if (Math.hypot(x - this.player.posX, y - this.player.posY) < minDistanceFromPlayer) continue;
       if (this.orbs.some((orb) => Math.hypot(x - orb.posX, y - orb.posY) < 1.2)) continue;
       if (this.worldModules.some((wm) => Math.hypot(x - wm.posX, y - wm.posY) < 1.4)) continue;
-      if (this.missionBeacons.some((beacon) => !beacon.activated && Math.hypot(x - beacon.posX, y - beacon.posY) < 1.5)) continue;
-      if (this.extractionPortal && Math.hypot(x - this.extractionPortal.posX, y - this.extractionPortal.posY) < 1.8) continue;
       if (this.punchMachine && Math.hypot(x - this.punchMachine.posX, y - this.punchMachine.posY) < 1.7) continue;
 
       return { x, y };
@@ -1868,14 +1912,38 @@ class GameManager {
       const transformX = -relX * sinA + relY * cosA;
       const transformY = relX * cosA + relY * sinA;
 
-      if (transformY <= 0.15 || transformY > WEAPON_RANGE) continue;
+      // Allow shooting at any distance forward (transformY > 0)
+      if (transformY <= 0) continue;
 
+      // Calculate zombie sprite dimensions on screen
+      const worldSize = 0.92; // Zombie world size
+      const spriteBaseSize = Math.abs((worldSize / transformY) * fovScale);
+      const zombieAspect = this.zombieSpriteCache.height / Math.max(1, this.zombieSpriteCache.width);
+      const spriteScreenW = Math.min(spriteBaseSize, SCREEN_HEIGHT * 0.4);
+      const spriteScreenH = Math.min(spriteScreenW * zombieAspect, SCREEN_HEIGHT * 0.62);
+
+      // Screen position of zombie center
       const screenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
-      const screenDelta = Math.abs(screenX - SCREEN_WIDTH / 2);
-      if (screenDelta > WEAPON_AIM_TOLERANCE_PX) continue;
+      const cameraOffset = this.cameraScreenOffsetPx();
+      const screenY = SCREEN_HEIGHT / 2 + cameraOffset;
 
-      if (!best || transformY < best.depth) {
-        best = { orb, depth: transformY, screenDelta };
+      // Calculate hitbox bounds
+      const hitboxLeft = screenX - spriteScreenW / 2;
+      const hitboxRight = screenX + spriteScreenW / 2;
+      const hitboxTop = screenY - spriteScreenH / 2;
+      const hitboxBottom = screenY + spriteScreenH / 2;
+
+      // Check if cursor is within zombie hitbox
+      const centerScreenX = SCREEN_WIDTH / 2;
+      const centerScreenY = SCREEN_HEIGHT / 2;
+      
+      if (centerScreenX >= hitboxLeft && centerScreenX <= hitboxRight &&
+          centerScreenY >= hitboxTop && centerScreenY <= hitboxBottom) {
+        
+        // Pick closest zombie by depth
+        if (!best || transformY < best.depth) {
+          best = { orb, depth: transformY };
+        }
       }
     }
 
@@ -2019,49 +2087,21 @@ class GameManager {
     }
   }
 
-  handleMissionCollisions() {
-    for (const beacon of this.missionBeacons) {
-      if (beacon.activated) continue;
 
-      const dx = this.player.posX - beacon.posX;
-      const dy = this.player.posY - beacon.posY;
-      const distSq = dx * dx + dy * dy;
-      const combinedR = this.player.radius + beacon.radius;
-      if (distSq > combinedR * combinedR) continue;
-
-      beacon.activated = true;
-      this.beaconsActivated += 1;
-      this.score += MISSION_BEACON_SCORE_BONUS;
-      this.recoverAmmo(MISSION_BEACON_AMMO_RECOVERY, "Balise synchronisée", [120, 245, 210]);
-      this.spawnCollectParticles(beacon.posX, beacon.posY, [120, 245, 210]);
-      this.addScreenShake(2.4, 180);
-
-      const totalBeacons = this.missionBeacons.length;
-      if (this.beaconsActivated < totalBeacons) {
-        this.pushHudToast(`Balise ${this.beaconsActivated}/${totalBeacons} activée`, [135, 250, 220]);
-      } else {
-        this.score += EXTRACTION_PORTAL_SCORE_BONUS;
-        this.spawnExtractionPortal();
-      }
-    }
-
-    if (!this.extractionPortal) return;
-
-    const dx = this.player.posX - this.extractionPortal.posX;
-    const dy = this.player.posY - this.extractionPortal.posY;
-    const distSq = dx * dx + dy * dy;
-    const combinedR = this.player.radius + this.extractionPortal.radius;
-    if (distSq <= combinedR * combinedR) {
-      this.triggerVictory("Toutes les balises sont sécurisées. Extraction réussie.");
-    }
-  }
 
   // --- Corruption (arena shrink) ---
   advanceCorruption() {
     if (this.isChronoActive()) return;
 
     const elapsed = this.survivalSeconds();
-    if (elapsed < CORRUPTION_START_DELAY_SECONDS) return;
+    
+    // Calculate corruption start delay based on wave difficulty
+    let corruptionStartDelay = CORRUPTION_START_DELAY_SECONDS;
+    if (this.waveNumber === 1) {
+      corruptionStartDelay = DIFFICULTY_CORRUPTION_DELAY_MS_WAVE_1 / 1000;
+    }
+    
+    if (elapsed < corruptionStartDelay) return;
 
     const timeSinceLast = elapsed - this.lastCorruptionTime;
     if (this.lastCorruptionTime === 0) {
@@ -2069,7 +2109,18 @@ class GameManager {
       return;
     }
 
-    if (timeSinceLast >= CORRUPTION_INTERVAL_SECONDS) {
+    // Calculate corruption interval based on wave (slower for early waves)
+    let corruptionInterval = CORRUPTION_INTERVAL_SECONDS;
+    if (this.waveNumber === 1) {
+      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE;
+    } else if (this.waveNumber === 2) {
+      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE * 0.9;
+    } else if (this.waveNumber === 3) {
+      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE * 0.85;
+    }
+    // From wave 4+: use normal speed
+
+    if (timeSinceLast >= corruptionInterval) {
       this.lastCorruptionTime = elapsed;
       this.corruptionLayer++;
       this.applyCorruptionLayer(this.corruptionLayer);
@@ -2147,7 +2198,7 @@ class GameManager {
           ? dt * MODULE_CHRONO_HUNTER_TIME_SCALE
           : dt;
 
-        orb.update(scaledDt, this.player);
+        orb.update(scaledDt, this.player, this.use3DMode);
       }
 
       if (orb.isHunter()) {
@@ -3096,33 +3147,6 @@ class GameManager {
       allSprites.push({ x: drop.posX, y: drop.posY, dist, type: "drop", obj: drop });
     }
 
-    for (const beacon of this.missionBeacons) {
-      if (beacon.activated) continue;
-      const dx = beacon.posX - playerX;
-      const dy = beacon.posY - playerY;
-      const distSq = dx * dx + dy * dy;
-      if (distSq > MAX_SPRITE_DIST * MAX_SPRITE_DIST) continue;
-      
-      const dist = Math.sqrt(distSq);
-      allSprites.push({ x: beacon.posX, y: beacon.posY, dist, type: "mission-beacon", obj: beacon });
-    }
-
-    if (this.extractionPortal) {
-      const dx = this.extractionPortal.posX - playerX;
-      const dy = this.extractionPortal.posY - playerY;
-      const distSq = dx * dx + dy * dy;
-      if (distSq <= MAX_SPRITE_DIST * MAX_SPRITE_DIST) {
-        const dist = Math.sqrt(distSq);
-        allSprites.push({
-          x: this.extractionPortal.posX,
-          y: this.extractionPortal.posY,
-          dist,
-          type: "extraction-portal",
-          obj: this.extractionPortal,
-        });
-      }
-    }
-
     if (this.punchMachine) {
       const dx = this.punchMachine.posX - playerX;
       const dy = this.punchMachine.posY - playerY;
@@ -3168,14 +3192,18 @@ class GameManager {
     const transformX = -relX * sinA + relY * cosA; // horizontal offset (right axis)
     const transformY =  relX * cosA + relY * sinA; // depth (forward axis)
 
-    if (transformY <= 0.1) return;
+    // Allow rendering at any distance (even very close)
+    if (transformY <= 0) return;
+
+    // FOV cone culling: reject sprites outside horizontal field of view
+    const halfFOVTan = Math.tan(FIELD_OF_VIEW_RADIANS / 2);
+    const maxHorizontalOffset = transformY * halfFOVTan;
+    if (Math.abs(transformX) > maxHorizontalOffset) return;
 
     const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
     const spriteScreenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
     const isZombieHumanoid = spriteData.type === "patrol" || spriteData.type === "chase";
     const isCollectOrb = spriteData.type === "safe" || spriteData.type === "warning";
-    const isMissionBeacon = spriteData.type === "mission-beacon";
-    const isExtractionPortal = spriteData.type === "extraction-portal";
     const isPunchMachine = spriteData.type === "punch-machine";
 
     let worldSize = 0.6;
@@ -3183,8 +3211,6 @@ class GameManager {
     if (isZombieHumanoid) worldSize = 0.92;
     if (spriteData.type === "warning") worldSize = 0.65;  // slightly bigger during warning
     if (spriteData.type === "world-module") worldSize = 0.68;
-    if (isMissionBeacon) worldSize = 0.78;
-    if (isExtractionPortal) worldSize = 1.06;
     if (isPunchMachine) worldSize = 0.92;
     if (spriteData.type === "drop") {
       if (spriteData.obj.type === "crate") worldSize = 0.5;
@@ -3220,6 +3246,10 @@ class GameManager {
     if (isZombieHumanoid) {
       // Try texture-based rendering first if available
       if (shouldRenderZombieAsTexture(this)) {
+        // Add distance-based alpha fade for zombies (similar to orbs)
+        const zombieRenderDistFade = Math.max(0, 1 - (spriteData.dist / MAX_RAY_DISTANCE / 0.5));
+        const zombieAlphaFade = constrain(zombieRenderDistFade, 0, 1);
+        
         const textureDrawn = drawZombieTextureSprite(this, pixels, {
           screenX: spriteScreenX,
           screenY: SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx(),
@@ -3228,6 +3258,7 @@ class GameManager {
           worldAngle: spriteData.obj.bodyAngle || 0,
           distance: spriteData.dist,
           zBuffer: this.zBuffer,
+          alphaFade: zombieAlphaFade,  // Pass alpha fade to rendering function
         });
         if (textureDrawn) return;
       }
@@ -3252,12 +3283,26 @@ class GameManager {
         const mp = spriteData.obj.mutationProgress();
         baseR = lerp(baseR, 255, mp * 0.5);
         baseG = lerp(baseG, 180, mp * 0.3);
+        
+        // Enhanced: Render distance fade-in and glow effect
+        const renderDistFade = Math.max(0, 1 - (spriteData.dist / MAX_RAY_DISTANCE / 0.7));
+        baseA = 255 * constrain(renderDistFade, 0, 1);
+        baseR = baseR * 1.2;  // Glow brightening
+        baseG = baseG * 1.2;
+        baseB = baseB * 1.2;
       } else if (spriteData.type === "warning") {
         const wp = spriteData.obj.warningProgress();
         const flash = Math.sin(now * 0.025) > 0 ? 1 : 0.4;
         baseR = lerp(255, 255, wp) * flash;
         baseG = lerp(180, 40, wp) * flash;
         baseB = 30 * flash;
+        
+        // Enhanced: Render distance fade-in and intensified glow
+        const renderDistFade = Math.max(0, 1 - (spriteData.dist / MAX_RAY_DISTANCE / 0.6));
+        baseA = 255 * constrain(renderDistFade, 0, 1);
+        baseR = Math.min(255, baseR * 1.3);
+        baseG = Math.min(255, baseG * 1.3);
+        baseB = Math.min(255, baseB * 1.3);
       } else if (spriteData.type === "world-module") {
         const wm = spriteData.obj;
         const pulse = 0.72 + 0.28 * Math.sin(now * 0.008 + wm.posX * 0.8 + wm.posY * 0.5);
@@ -3298,16 +3343,6 @@ class GameManager {
           baseG = 220 * pulse;
           baseB = 255;
         }
-      } else if (isMissionBeacon) {
-        const beaconPulse = 0.72 + 0.28 * Math.sin(now * 0.01 + spriteData.obj.pulseOffset);
-        baseR = 120 * beaconPulse;
-        baseG = 250 * beaconPulse;
-        baseB = 220;
-      } else if (isExtractionPortal) {
-        const portalPulse = 0.65 + 0.35 * Math.sin(now * 0.014);
-        baseR = 90 * portalPulse;
-        baseG = 255;
-        baseB = 165 * portalPulse;
       } else if (isPunchMachine) {
         const sinceUse = now - spriteData.obj.lastUseMs;
         const cooldownFrac = constrain(sinceUse / PUNCH_MACHINE_COOLDOWN_MS, 0, 1);
@@ -3351,30 +3386,28 @@ class GameManager {
     const orbStepY = isCollectOrb ? orbTexH / orbSpriteH : 0;
 
     for (let sx = drawStartX; sx < drawEndX; sx++) {
-      // Z-buffer occlusion test: skip only if definitely behind a wall
-      // DON'T clip sprites that are drawn near the weapon zone (right side)
-      // since the weapon is always drawn on top after updatePixels()
-      const wallDepth = this.zBuffer[sx] || MAX_RAY_DISTANCE;
-      const closeToWeaponZone = sx > SCREEN_WIDTH * 0.6;  // Near weapon on right 60%+
+      // Z-buffer occlusion test: sprites behind walls are not rendered
+      // Stricter culling to prevent sprites from peeking through blocks
+      // Map screen pixel coordinate to ray index in zBuffer
+      const rayIndex = Math.floor((sx / SCREEN_WIDTH) * RAY_COUNT);
+      const wallDepth = this.zBuffer[rayIndex] || MAX_RAY_DISTANCE;
       
-      // Only apply z-buffer culling if we're NOT close to weapon zone OR
-      // if we're significantly behind (more margin)
-      if (!closeToWeaponZone && transformY > wallDepth + 0.1) continue;
-      if (closeToWeaponZone && transformY > wallDepth + 0.5) continue;  // More lenient far away
+      // Strict occlusion: if sprite is behind wall depth, cull it completely
+      // No margin - sprites must be in front of or exactly at wall depth
+      if (transformY > wallDepth) continue;
 
       let zombieTx = 0;
       if (isZombieHumanoid) {
         zombieTx = Math.min(zombieTexW - 1, Math.floor((sx - drawStartX) * zombieStepX));
       }
 
-      let orbTx = 0;
-      if (isCollectOrb) {
-        orbTx = Math.min(orbTexW - 1, Math.floor((sx - drawStartX) * orbStepX));
-      }
-
       for (let sy = drawStartY; sy < drawEndY; sy++) {
-        const fracX = (sx - drawStartX) * invSize - 0.5;
-        const fracY = (sy - drawStartY) * invSize - 0.5;
+        // Map texture coordinates from LOGICAL sprite boundaries, not clipped screen boundaries
+        // This fixes clipping artifacts when sprites are partially off-screen
+        const spriteLeftEdge = spriteScreenX - spriteScreenW / 2;
+        const spriteTopEdge = SCREEN_HEIGHT / 2 - spriteScreenH / 2 + cameraOffset;
+        const fracX = ((sx - spriteLeftEdge) / spriteScreenW) * 2 - 1;
+        const fracY = ((sy - spriteTopEdge) / spriteScreenH) * 2 - 1;
         const dstIdx = 4 * (sy * SCREEN_WIDTH + sx);
 
         if (isZombieHumanoid) {
@@ -3391,8 +3424,11 @@ class GameManager {
         }
 
         if (isCollectOrb) {
-          const orbTy = Math.min(orbTexH - 1, Math.floor((sy - drawStartY) * orbStepY));
-          const srcIdx = 4 * (orbTy * orbTexW + orbTx);
+          // Simple, robust orb rendering without complex rotation
+          // Directly sample texture based on normalized coordinates
+          const orbTy = Math.min(orbTexH - 1, Math.floor(((fracY + 1) / 2) * orbTexH));
+          const orbTxCalculated = Math.min(orbTexW - 1, Math.floor(((fracX + 1) / 2) * orbTexW));
+          const srcIdx = 4 * (orbTy * orbTexW + orbTxCalculated);
           const oAlpha = orbTex[srcIdx + 3] / 255;
           if (oAlpha <= 0.001) continue;
 
@@ -3407,19 +3443,13 @@ class GameManager {
           continue;
         }
 
-        if (isMissionBeacon) {
-          const diamond = Math.abs(fracX) * 0.9 + Math.abs(fracY);
-          if (diamond > 0.62) continue;
-        } else if (isExtractionPortal) {
-          const radial = fracX * fracX + fracY * fracY;
-          if (radial > 0.24 || radial < 0.09) continue;
-        } else if (isPunchMachine) {
+        if (isPunchMachine) {
           const body = Math.abs(fracX) <= 0.36 && fracY > -0.5 && fracY < 0.55;
           const crown = Math.abs(fracX) <= 0.22 && fracY >= -0.62 && fracY <= -0.5;
           if (!body && !crown) continue;
         }
 
-        if (!isMissionBeacon && !isExtractionPortal && !isPunchMachine && fracX * fracX + fracY * fracY > 0.2) continue;
+        if (!isPunchMachine && fracX * fracX + fracY * fracY > 0.2) continue;
 
         if (alphaFrac >= 0.98) {
           pixels[dstIdx]     = finalR;
@@ -3458,7 +3488,7 @@ class GameManager {
       
       const rayDirX = this.rayDirXBuffer[rayCol];
       const rayDirY = this.rayDirYBuffer[rayCol];
-      const wallDist = this.zBuffer[sx];
+      const wallDist = this.zBuffer[rayCol];  // Use rayCol, not sx
 
       // Skip only if both directions are nearly zero
       if (Math.abs(rayDirX) < 1e-8 && Math.abs(rayDirY) < 1e-8) continue;
@@ -3707,98 +3737,6 @@ class GameManager {
         "leg_right"
       )
     );
-
-    // Eyes are placed on the face matching the current smooth look direction.
-    const lookX = headDirX;
-    const lookY = headDirY;
-
-    if (Math.abs(lookX) > Math.abs(lookY)) {
-      if (lookX >= 0) {
-        // Looking right: eyes on +X face
-        parts.push(
-          makePart(
-            headCenterX + 0.158,
-            headCenterY - 0.030,
-            0.012,
-            0.022,
-            bodyYaw,
-            0.50 + bob,
-            0.03,
-            palette.face,
-            palette.face
-          )
-        );
-        parts.push(
-          makePart(
-            headCenterX + 0.158,
-            headCenterY + 0.030,
-            0.012,
-            0.022,
-            bodyYaw,
-            0.50 + bob,
-            0.03,
-            palette.face,
-            palette.face
-          )
-        );
-      } else {
-        // Looking left: eyes on -X face
-        parts.push(
-          makePart(
-            headCenterX - 0.158,
-            headCenterY - 0.030,
-            0.012,
-            0.022,
-            bodyYaw,
-            0.50 + bob,
-            0.03,
-            palette.face,
-            palette.face
-          )
-        );
-        parts.push(
-          makePart(
-            headCenterX - 0.158,
-            headCenterY + 0.030,
-            0.012,
-            0.022,
-            bodyYaw,
-            0.50 + bob,
-            0.03,
-            palette.face,
-            palette.face
-          )
-        );
-      }
-    } else if (lookY >= 0) {
-      // Looking front: eyes on +Y face
-      parts.push(
-        makePart(
-          headCenterX - 0.045,
-          headCenterY + 0.081,
-          0.022,
-          0.012,
-          bodyYaw,
-          0.50 + bob,
-          0.03,
-          palette.face,
-          palette.face
-        )
-      );
-      parts.push(
-        makePart(
-          headCenterX + 0.045,
-          headCenterY + 0.081,
-          0.022,
-          0.012,
-          bodyYaw,
-          0.50 + bob,
-          0.03,
-          palette.face,
-          palette.face
-        )
-      );
-    }
 
     return parts;
   }
@@ -4113,10 +4051,7 @@ class GameManager {
   }
 
   paintZombieFaceDetails(data, width, height, headX, headY, eyeColor) {
-    const eyeY = headY + 4;
-    this.setVoxelPixel(data, width, height, headX + 2, eyeY, eyeColor[0], eyeColor[1], eyeColor[2], 255);
-    this.setVoxelPixel(data, width, height, headX + 7, eyeY, eyeColor[0], eyeColor[1], eyeColor[2], 255);
-
+    // Mouth rendering only - eyes removed
     for (let x = headX + 3; x <= headX + 6; x++) {
       this.setVoxelPixel(data, width, height, x, headY + 7, 44, 62, 40, 255);
     }
@@ -4854,21 +4789,6 @@ class GameManager {
       }
     }
 
-    const eyeColor = variant === "charge" ? [255, 80, 70] : [235, 70, 70];
-    const eyePixels = [
-      [16, 7], [17, 7],
-      [21, 7], [22, 7],
-    ];
-
-    for (const [ex, ey] of eyePixels) {
-      if (ex < 0 || ex >= width || ey < 0 || ey >= height) continue;
-      const eyeIdx = 4 * (ey * width + ex);
-      data[eyeIdx] = eyeColor[0];
-      data[eyeIdx + 1] = eyeColor[1];
-      data[eyeIdx + 2] = eyeColor[2];
-      data[eyeIdx + 3] = 255;
-    }
-
     return data;
   }
 
@@ -4938,40 +4858,46 @@ class GameManager {
 
   // --- Minimap ---
   drawMinimap() {
-    const mmSize = Math.floor(constrain(Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.24, 170, 230));
+    // Taille réduite - prend jusqu'à 40% de l'écran
+    const mmSize = Math.floor(Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.40);
     const mmX = SCREEN_WIDTH - mmSize - 14;
-    const mmY = Math.min(156, Math.max(10, SCREEN_HEIGHT - mmSize - 10));
+    const mmY = 10;  // En haut à droite
     const tilePixels = mmSize / MAP_TILE_COUNT;
 
     push();
-    fill(0, 0, 0, 160);
-    noStroke();
-    rect(mmX, mmY, mmSize, mmSize, 4);
+    fill(0, 0, 0, 220);
+    stroke(80, 80, 80, 255);
+    strokeWeight(3);
+    rect(mmX, mmY, mmSize, mmSize, 6);
 
-    // Tiles
+    // Tiles - avec contour pour mieux les voir
     for (let row = 0; row < MAP_TILE_COUNT; row++) {
       for (let col = 0; col < MAP_TILE_COUNT; col++) {
         const t = worldTileMap[row][col];
         if (t === 0) continue;
         switch (t) {
-          case 1: fill(130, 130, 130, 200); break;
-          case 2: fill(134, 96, 67, 200); break;
-          case 3: fill(76, 155, 60, 200); break;
-          case 4: fill(90, 130, 90, 200); break;
-          case 5: fill(220, 195, 100, 200); break;
-          case 6: fill(180, 30, 30, 220); break;
-          case 7: fill(150, 108, 74, 210); break;
-          case 8: fill(90, 205, 235, 220); break;
-          case 9: fill(150, 82, 72, 210); break;
-          case 10: fill(255, 155, 215, 220); break;
-          case 11: fill(150, 210, 255, 220); break;
-          default: fill(100, 100, 100, 200);
+          case 1: fill(130, 130, 130, 230); break;
+          case 2: fill(134, 96, 67, 230); break;
+          case 3: fill(76, 155, 60, 230); break;
+          case 4: fill(90, 130, 90, 230); break;
+          case 5: fill(220, 195, 100, 230); break;
+          case 6: fill(220, 30, 30, 240); break;
+          case 7: fill(150, 108, 74, 230); break;
+          case 8: fill(90, 205, 235, 240); break;
+          case 9: fill(150, 82, 72, 240); break;
+          case 10: fill(255, 155, 215, 240); break;
+          case 11: fill(150, 210, 255, 240); break;
+          case 12: fill(100, 100, 120, 220); break;
+          default: fill(100, 100, 100, 230);
         }
-        rect(mmX + col * tilePixels, mmY + row * tilePixels, tilePixels + 0.5, tilePixels + 0.5);
+        stroke(40, 40, 40, 100);  // Petit contour sombre pour séparation
+        strokeWeight(0.5);
+        rect(mmX + col * tilePixels, mmY + row * tilePixels, tilePixels, tilePixels);
       }
     }
 
     // Orbs / enemies (colour reflects state)
+    noStroke();
     for (const orb of this.orbs) {
       let col;
       if (orb.isSafe())          col = color(80, 255, 120);
@@ -4981,20 +4907,22 @@ class GameManager {
       fill(col);
       const ox = mmX + orb.posX * tilePixels;
       const oy = mmY + orb.posY * tilePixels;
-      circle(ox, oy, 3);
+      circle(ox, oy, 10);
     }
 
     // World modules
+    noStroke();
     for (const wm of this.worldModules) {
       if (wm.type === "aegis") fill(90, 230, 255);
       else if (wm.type === "emp") fill(170, 240, 255);
       else fill(200, 130, 255);
       const mx = mmX + wm.posX * tilePixels;
       const my = mmY + wm.posY * tilePixels;
-      rect(mx - 2, my - 2, 4, 4, 1);
+      rect(mx - 4, my - 4, 8, 8, 1);
     }
 
     // Drops
+    noStroke();
     for (const drop of this.drops) {
       if (drop.type === "ammo") fill(255, 220, 110);
       else if (drop.type === "score") fill(255, 255, 140);
@@ -5003,16 +4931,7 @@ class GameManager {
       else fill(170, 225, 255);
       const dx = mmX + drop.posX * tilePixels;
       const dy = mmY + drop.posY * tilePixels;
-      circle(dx, dy, 3);
-    }
-
-    // Mission beacons
-    for (const beacon of this.missionBeacons) {
-      if (beacon.activated) continue;
-      fill(120, 245, 210);
-      const bx = mmX + beacon.posX * tilePixels;
-      const by = mmY + beacon.posY * tilePixels;
-      rect(bx - 2, by - 2, 4, 4, 1);
+      circle(dx, dy, 6);
     }
 
     // Extraction portal
@@ -5021,29 +4940,31 @@ class GameManager {
       const pyPortal = mmY + this.extractionPortal.posY * tilePixels;
       noFill();
       stroke(130, 255, 180);
-      strokeWeight(1.4);
-      circle(pxPortal, pyPortal, 8);
+      strokeWeight(3);
+      circle(pxPortal, pyPortal, 12);
       noStroke();
     }
 
     // Punch Machine
+    noStroke();
     if (this.punchMachine) {
       const mx = mmX + this.punchMachine.posX * tilePixels;
       const my = mmY + this.punchMachine.posY * tilePixels;
       fill(235, 120, 255);
-      rect(mx - 2.5, my - 2.5, 5, 5, 1);
+      rect(mx - 4, my - 4, 8, 8, 1);
     }
 
     // Player
+    noStroke();
     const px = mmX + this.player.posX * tilePixels;
     const py = mmY + this.player.posY * tilePixels;
     fill(100, 180, 255);
-    circle(px, py, 5);
+    circle(px, py, 10);
 
     // Direction arrow
     stroke(100, 180, 255);
-    strokeWeight(1.5);
-    const arrowLen = 8;
+    strokeWeight(2);
+    const arrowLen = 15;
     line(px, py, px + Math.cos(this.player.angle) * arrowLen, py + Math.sin(this.player.angle) * arrowLen);
 
     pop();
@@ -5057,15 +4978,16 @@ class GameManager {
 
     const hunterCount = this.orbs.filter(o => o.isHunter()).length;
     const moduleCount = this.worldModules.length;
-    const totalBeacons = this.missionBeacons.length;
-    const remainingBeacons = this.missionBeacons.filter((b) => !b.activated).length;
-    const objectiveText = remainingBeacons > 0
-      ? `BALISES: ${this.beaconsActivated}/${totalBeacons}`
-      : (this.extractionPortal ? "OBJECTIF: EXTRACTION" : "OBJECTIF: INITIALISATION");
+    
+    // Display wave objective: kills required to complete wave
+    const objectiveText = this.waveNumber > 0
+      ? `ZOMBIES: ${this.waveEnemiesKilled}/${this.waveKillsRequired}`
+      : "EN ATTENTE...";
+    
     const waveCountdownSec = Math.max(0, (this.nextWaveActionMs - millis()) / 1000);
     const waveText = this.waveState === "preparing"
       ? `PROCHAINE VAGUE: ${waveCountdownSec.toFixed(1)}s`
-      : `VAGUE ${this.waveNumber}: ${this.waveEnemiesKilled}/${this.waveEnemiesTotal}`;
+      : `VAGUE ${this.waveNumber}: ${this.waveEnemiesKilled}/${this.waveKillsRequired}`;
 
     let machineText = `PUNCH: débloquée vague ${PUNCH_MACHINE_UNLOCK_WAVE}`;
     let machineColor = [210, 180, 255];

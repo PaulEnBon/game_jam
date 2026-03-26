@@ -16,19 +16,20 @@ class Zombie3DModel {
     
     // Dimensions de chaque partie (width, height, depth)
     // Basé sur les proportions Minecraft (head: 8x8x8, body: 8x12x4, arms/legs: 4x12x4)
-    this.headSize = { w: 0.4, h: 0.4, d: 0.4 };      // Head (réduit)
-    this.bodySize = { w: 0.4, h: 0.65, d: 0.2 };     // Body/torso (réduit)
-    this.armSize = { w: 0.2, h: 0.65, d: 0.2 };      // Arms (réduit, plus fins)
-    this.legSize = { w: 0.2, h: 0.65, d: 0.2 };      // Legs (réduit, plus fins)
+    this.headSize = { w: 0.25, h: 0.25, d: 0.25 };   // Head (réduit)
+    this.bodySize = { w: 0.22, h: 0.3, d: 0.12 };    // Body/torso (plus petit)
+    this.armSize = { w: 0.12, h: 0.4, d: 0.12 };     // Arms (fins)
+    this.legSize = { w: 0.12, h: 0.4, d: 0.12 };     // Legs (fins)
 
-    // Positions relatives au center (anchor = hips/waist level)
-    // In p5.js WEBGL: Y+ points DOWN (negative Y = up, positive Y = down)
-    this.headPos = { x: 0, y: -1.15, z: 0 };         // Head on top
-    this.bodyPos = { x: 0, y: -0.35, z: 0 };         // Body/torso center
-    this.armLeftPos = { x: -0.45, y: -0.25, z: 0 };  // Left arm at shoulder
-    this.armRightPos = { x: 0.45, y: -0.25, z: 0 };  // Right arm at shoulder
-    this.legLeftPos = { x: -0.15, y: 0.65, z: 0 };   // Left leg below hips
-    this.legRightPos = { x: 0.15, y: 0.65, z: 0 };   // Right leg below hips
+    // Positions relatives au center
+    // Zombie feet should rest on ground at Y = -0.5
+    // Center of zombie = -0.5 - 0.2 (half leg height) = -0.7
+    this.headPos = { x: 0, y: -0.5, z: 0 };          // Head on top
+    this.bodyPos = { x: 0, y: -0.15, z: 0 };         // Body/torso center
+    this.armLeftPos = { x: -0.2, y: -0.08, z: 0 };   // Left arm at shoulder
+    this.armRightPos = { x: 0.2, y: -0.08, z: 0 };   // Right arm at shoulder
+    this.legLeftPos = { x: -0.08, y: 0.2, z: 0 };    // Left leg below hips
+    this.legRightPos = { x: 0.08, y: 0.2, z: 0 };    // Right leg below hips
 
     // Animation state
     this.walkPhase = 0;

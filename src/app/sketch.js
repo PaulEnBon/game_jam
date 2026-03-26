@@ -172,6 +172,12 @@ function keyPressed() {
     return false;
   }
 
+  // Toggle pause on 'P' or 'p' key
+  if (key === 'p' || key === 'P') {
+    gameManager.togglePause();
+    return false;
+  }
+
   if (keyCode === ESCAPE) {
     gameManager.handleEscapeKey();
     return false;

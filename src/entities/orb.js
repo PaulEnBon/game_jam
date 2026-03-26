@@ -94,7 +94,7 @@ class Orb {
   // ----------------------------------------------------------
   //  UPDATE  (called every frame by GameManager)
   // ----------------------------------------------------------
-  update(deltaSeconds, targetPlayer) {
+  update(deltaSeconds, targetPlayer, is3DMode = false) {
     const beforeX = this.posX;
     const beforeY = this.posY;
     const now = millis();
@@ -111,11 +111,22 @@ class Orb {
     }
 
     // ---- Per-state behaviour ----
-    switch (this.state) {
-      case "safe":    this.updateSafe(deltaSeconds); break;
-      case "warning": this.updateWarning(deltaSeconds); break;
-      case "patrol":  this.updatePatrol(deltaSeconds, targetPlayer); break;
-      case "chase":   this.updateChase(deltaSeconds, targetPlayer); break;
+    if (is3DMode) {
+      // 3D mode: use separate functions
+      switch (this.state) {
+        case "safe":    this.updateSafe(deltaSeconds); break;
+        case "warning": this.updateWarning(deltaSeconds); break;
+        case "patrol":  this.updatePatrol_3D(deltaSeconds, targetPlayer); break;
+        case "chase":   this.updateChase_3D(deltaSeconds, targetPlayer); break;
+      }
+    } else {
+      // 2D mode: use standard functions
+      switch (this.state) {
+        case "safe":    this.updateSafe(deltaSeconds); break;
+        case "warning": this.updateWarning(deltaSeconds); break;
+        case "patrol":  this.updatePatrol_2D(deltaSeconds, targetPlayer); break;
+        case "chase":   this.updateChase_2D(deltaSeconds, targetPlayer); break;
+      }
     }
 
     const movedX = this.posX - beforeX;
@@ -126,7 +137,11 @@ class Orb {
       this.moveDirY = movedY / movedLen;
     }
 
-    this.updateBodyDirection(deltaSeconds);
+    if (is3DMode) {
+      this.updateBodyDirection_3D(deltaSeconds);
+    } else {
+      this.updateBodyDirection_2D(deltaSeconds);
+    }
     this.updateLookDirection(deltaSeconds, targetPlayer);
 
     this.prevPosX = this.posX;
@@ -183,25 +198,23 @@ class Orb {
     this.lookDirY = Math.sin(this.lookAngle);
   }
 
-  updateBodyDirection(dt) {
+  updateBodyDirection_2D(dt) {
     if (!this.isHunter()) return;
 
     const moveLen = Math.hypot(this.moveDirX, this.moveDirY);
     
     // Always update angle towards movement direction, even if moving slowly
     if (moveLen > 0.01) {
-      // For p5.js WEBGL rotateY: 0 = look +Z, π/2 = look +X
-      // moveDirX is X displacement, moveDirY is Z displacement
-      // So angle = atan2(X_movement, Z_movement)
-      const desiredAngle = Math.atan2(this.moveDirX, this.moveDirY);
+      // For 2D: normal atan2(Y, X)
+      const desiredAngle = Math.atan2(this.moveDirY, this.moveDirX);
       let delta = desiredAngle - this.bodyAngle;
       
       // Normalize angle difference to [-π, π]
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
 
-      // Smooth rotation with rate limiting - even faster for snappier turns
-      const turnRate = 6.0; // rad/s - increased for instant response
+      // Smooth rotation with rate limiting
+      const turnRate = 6.0; // rad/s
       const maxStep = turnRate * Math.max(0.001, dt);
       const step = constrain(delta, -maxStep, maxStep);
       this.bodyAngle += step;
@@ -209,6 +222,33 @@ class Orb {
 
     this.bodyDirX = Math.cos(this.bodyAngle);
     this.bodyDirY = Math.sin(this.bodyAngle);
+  }
+
+  updateBodyDirection_3D(dt) {
+    if (!this.isHunter()) return;
+
+    const moveLen = Math.hypot(this.moveDirX, this.moveDirY);
+    
+    // Always update angle towards movement direction, even if moving slowly
+    if (moveLen > 0.01) {
+      // For 3D WEBGL: atan2(X, Y) - rotateY 0 = +Z, π/2 = +X
+      // moveDirX is X displacement, moveDirY is Z displacement (the "Y" in 2D becomes Z in 3D)
+      const desiredAngle = Math.atan2(this.moveDirX, this.moveDirY);
+      let delta = desiredAngle - this.bodyAngle;
+      
+      // Normalize angle difference to [-π, π]
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+
+      // Smooth rotation with rate limiting - slightly slower for 3D to avoid jitter
+      const turnRate = 5.5; // rad/s - adjusted for 3D
+      const maxStep = turnRate * Math.max(0.001, dt);
+      const step = constrain(delta, -maxStep, maxStep);
+      this.bodyAngle += step;
+    }
+
+    this.bodyDirX = Math.sin(this.bodyAngle);
+    this.bodyDirY = Math.cos(this.bodyAngle);
   }
 
   // --- SAFE : gentle bob ---
@@ -226,8 +266,8 @@ class Orb {
     this.posY = this.baseY;
   }
 
-  // --- PATROL : wander between random waypoints ---
-  updatePatrol(dt, player) {
+  // --- PATROL (2D) : wander between random waypoints ---
+  updatePatrol_2D(dt, player) {
     // Check if player entered detection range → switch to chase
     const distToPlayer = Math.hypot(player.posX - this.posX, player.posY - this.posY);
     if (distToPlayer < HUNTER_DETECT_RANGE) {
@@ -249,14 +289,43 @@ class Orb {
     const speed = this.hunterSpeed * HUNTER_PATROL_SPEED_RATIO;
     const dirX = dx / distWP;
     const dirY = dy / distWP;
-    const moved = this.moveWithCollision(dirX * speed * dt, dirY * speed * dt);
+    const moved = this.moveWithCollision_2D(dirX * speed * dt, dirY * speed * dt);
     if (!moved) {
       this.pickNewWaypoint();
     }
   }
 
-  // --- CHASE : pursue player, occasionally charge ---
-  updateChase(dt, player) {
+  // --- PATROL (3D) : wander between random waypoints ---
+  updatePatrol_3D(dt, player) {
+    // Check if player entered detection range → switch to chase
+    const distToPlayer = Math.hypot(player.posX - this.posX, player.posY - this.posY);
+    if (distToPlayer < HUNTER_DETECT_RANGE) {
+      this.state = "chase";
+      this.lastChargeMs = millis();  // reset charge cooldown on aggro
+      return;
+    }
+
+    // Move toward current waypoint
+    const dx = this.waypointX - this.posX;
+    const dy = this.waypointY - this.posY;
+    const distWP = Math.hypot(dx, dy);
+
+    if (distWP < HUNTER_WAYPOINT_REACH) {
+      this.pickNewWaypoint();
+      return;
+    }
+
+    const speed = this.hunterSpeed * HUNTER_PATROL_SPEED_RATIO;
+    const dirX = dx / distWP;
+    const dirY = dy / distWP;
+    const moved = this.moveWithCollision_3D(dirX * speed * dt, dirY * speed * dt);
+    if (!moved) {
+      this.pickNewWaypoint();
+    }
+  }
+
+  // --- CHASE (2D) : pursue player, occasionally charge ---
+  updateChase_2D(dt, player) {
     const now = millis();
     const dx = player.posX - this.posX;
     const dy = player.posY - this.posY;
@@ -292,60 +361,170 @@ class Orb {
 
     if (dist < 0.01) return;
 
-    let speed, dirX, dirY;
-    if (this.chargeActive) {
-      // During charge : locked direction, high speed
-      speed = this.hunterSpeed * HUNTER_CHARGE_MULTIPLIER;
-      dirX = this.chargeDirX;
-      dirY = this.chargeDirY;
-    } else {
-      // Normal chase : pursue player but avoid fully straight tunnel-vision.
-      speed = this.hunterSpeed;
+    // --- Determine target: direct to player OR pathfind around obstacles ---
+    let targetX = player.posX;
+    let targetY = player.posY;
+    const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
 
-      let targetX = player.posX;
-      let targetY = player.posY;
-      const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
-
-      if (hasLOS) {
-        // Small lateral offset makes approach less "always eye contact".
-        const invDist = 1 / Math.max(0.001, dist);
-        const perpX = -dy * invDist;
-        const perpY = dx * invDist;
-        const strafe = Math.sin(now * 0.003 + this.strafeSeed) * 0.42;
-        targetX += perpX * strafe;
-        targetY += perpY * strafe;
-        this.nextPathX = null;
-        this.nextPathY = null;
-      } else {
-        if (
-          this.nextPathX === null ||
-          this.nextPathY === null ||
-          now - this.lastRepathMs >= this.repathIntervalMs ||
-          Math.hypot(this.nextPathX - this.posX, this.nextPathY - this.posY) < 0.25
-        ) {
-          const step = this.findPathNextStepTo(player.posX, player.posY);
-          this.lastRepathMs = now;
-          if (step) {
-            this.nextPathX = step.x;
-            this.nextPathY = step.y;
-          }
-        }
-
-        if (this.nextPathX !== null && this.nextPathY !== null) {
-          targetX = this.nextPathX;
-          targetY = this.nextPathY;
+    if (!hasLOS) {
+      // Can't see player directly - use pathfinding to navigate around blocks
+      if (
+        this.nextPathX === null ||
+        this.nextPathY === null ||
+        now - this.lastRepathMs >= this.repathIntervalMs ||
+        Math.hypot(this.nextPathX - this.posX, this.nextPathY - this.posY) < 0.25
+      ) {
+        const step = this.findPathNextStepTo(player.posX, player.posY);
+        this.lastRepathMs = now;
+        if (step) {
+          this.nextPathX = step.x;
+          this.nextPathY = step.y;
         }
       }
 
-      const tx = targetX - this.posX;
-      const ty = targetY - this.posY;
-      const tDist = Math.hypot(tx, ty);
-      if (tDist <= 0.0001) return;
-      dirX = tx / tDist;
-      dirY = ty / tDist;
+      if (this.nextPathX !== null && this.nextPathY !== null) {
+        targetX = this.nextPathX;
+        targetY = this.nextPathY;
+      }
     }
 
-    const moved = this.moveWithCollision(dirX * speed * dt, dirY * speed * dt);
+    // --- Always turn to face target, then move forward only ---
+    let desiredAngle;
+    
+    if (this.chargeActive) {
+      // During charge: face locked charge direction
+      desiredAngle = Math.atan2(this.chargeDirY, this.chargeDirX);
+    } else {
+      // Normal chase: turn to face the target (direct or pathfound)
+      const tx = targetX - this.posX;
+      const ty = targetY - this.posY;
+      desiredAngle = Math.atan2(ty, tx);
+    }
+
+    // Smoothly rotate body toward desired angle
+    let delta = desiredAngle - this.bodyAngle;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+
+    // Fast turn rate for responsive zombie
+    const turnRate = 8.0; // rad/s - very responsive
+    const maxStep = turnRate * Math.max(0.001, dt);
+    const step = constrain(delta, -maxStep, maxStep);
+    this.bodyAngle += step;
+
+    this.bodyDirX = Math.cos(this.bodyAngle);
+    this.bodyDirY = Math.sin(this.bodyAngle);
+
+    // Move ONLY forward (in direction of body angle)
+    const speed = this.chargeActive ? 
+      (this.hunterSpeed * HUNTER_CHARGE_MULTIPLIER) : 
+      this.hunterSpeed;
+    
+    const moved = this.moveWithCollision_2D(this.bodyDirX * speed * dt, this.bodyDirY * speed * dt);
+    if (!moved && !this.chargeActive) {
+      this.tryUnstuckHop();
+    }
+  }
+
+  // --- CHASE (3D) : pursue player, occasionally charge ---
+  updateChase_3D(dt, player) {
+    const now = millis();
+    const dx = player.posX - this.posX;
+    const dy = player.posY - this.posY;
+    const dist = Math.hypot(dx, dy);
+
+    // If player escapes far enough, drop back to patrol
+    if (!this.noLoseAggro && dist > HUNTER_LOSE_RANGE) {
+      this.state = "patrol";
+      this.pickNewWaypoint();
+      return;
+    }
+
+    // --- Charge attack logic ---
+    // Start a new charge if off cooldown and close enough
+    if (
+      !this.chargeActive &&
+      dist > 0.001 &&
+      dist < HUNTER_DETECT_RANGE &&
+      now - this.lastChargeMs > HUNTER_CHARGE_COOLDOWN_MS
+    ) {
+      this.chargeActive = true;
+      this.chargeStartMs = now;
+      // Lock in direction at charge start
+      this.chargeDirX = dx / dist;
+      this.chargeDirY = dy / dist;
+    }
+
+    // End charge after duration
+    if (this.chargeActive && now - this.chargeStartMs > HUNTER_CHARGE_DURATION_MS) {
+      this.chargeActive = false;
+      this.lastChargeMs = now;
+    }
+
+    if (dist < 0.01) return;
+
+    // --- Determine target: direct to player OR pathfind around obstacles ---
+    let targetX = player.posX;
+    let targetY = player.posY;
+    const hasLOS = this.hasLineOfSightTo(player.posX, player.posY);
+
+    if (!hasLOS) {
+      // Can't see player directly - use pathfinding to navigate around blocks
+      if (
+        this.nextPathX === null ||
+        this.nextPathY === null ||
+        now - this.lastRepathMs >= this.repathIntervalMs ||
+        Math.hypot(this.nextPathX - this.posX, this.nextPathY - this.posY) < 0.25
+      ) {
+        const step = this.findPathNextStepTo(player.posX, player.posY);
+        this.lastRepathMs = now;
+        if (step) {
+          this.nextPathX = step.x;
+          this.nextPathY = step.y;
+        }
+      }
+
+      if (this.nextPathX !== null && this.nextPathY !== null) {
+        targetX = this.nextPathX;
+        targetY = this.nextPathY;
+      }
+    }
+
+    // --- Always turn to face target, then move forward only (3D version) ---
+    let desiredAngle;
+    
+    if (this.chargeActive) {
+      // During charge: face locked charge direction
+      // In 3D: atan2(X, Y) for rotateY
+      desiredAngle = Math.atan2(this.chargeDirX, this.chargeDirY);
+    } else {
+      // Normal chase: turn to face the target (direct or pathfound)
+      const tx = targetX - this.posX;
+      const ty = targetY - this.posY;
+      // In 3D: atan2(X, Z) for rotateY, where Z is the "forward" direction
+      desiredAngle = Math.atan2(tx, ty);
+    }
+
+    // Smoothly rotate body toward desired angle
+    let delta = desiredAngle - this.bodyAngle;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+
+    // Slightly slower turn rate for 3D to avoid jitter
+    const turnRate = 7.0; // rad/s - slightly slower than 2D
+    const maxStep = turnRate * Math.max(0.001, dt);
+    const step = constrain(delta, -maxStep, maxStep);
+    this.bodyAngle += step;
+
+    this.bodyDirX = Math.sin(this.bodyAngle);  // X from sin in 3D
+    this.bodyDirY = Math.cos(this.bodyAngle);  // Z from cos in 3D
+
+    // Move ONLY forward (in direction of body angle)
+    const speed = this.chargeActive ? 
+      (this.hunterSpeed * HUNTER_CHARGE_MULTIPLIER) : 
+      this.hunterSpeed;
+    
+    const moved = this.moveWithCollision_3D(this.bodyDirX * speed * dt, this.bodyDirY * speed * dt);
     if (!moved && !this.chargeActive) {
       this.tryUnstuckHop();
     }
@@ -452,8 +631,8 @@ class Orb {
     return { x: stepCol + 0.5, y: stepRow + 0.5 };
   }
 
-  // --- Collision-aware movement (wall slide) ---
-  moveWithCollision(moveX, moveY) {
+  // --- Collision-aware movement (wall slide) - 2D version ---
+  moveWithCollision_2D(moveX, moveY) {
     let moved = false;
 
     const nextX = this.posX + moveX;
@@ -474,6 +653,52 @@ class Orb {
 
     const dirX = moveX / intentLength;
     const dirY = moveY / intentLength;
+    const sideX = -dirY;
+    const sideY = dirX;
+    const sideStep = 0.18;
+
+    const leftX = this.posX + sideX * sideStep;
+    const leftY = this.posY + sideY * sideStep;
+    if (!isWorldBlocked(leftX, leftY, 0.2)) {
+      this.posX = leftX;
+      this.posY = leftY;
+      return true;
+    }
+
+    const rightX = this.posX - sideX * sideStep;
+    const rightY = this.posY - sideY * sideStep;
+    if (!isWorldBlocked(rightX, rightY, 0.2)) {
+      this.posX = rightX;
+      this.posY = rightY;
+      return true;
+    }
+
+    return false;
+  }
+
+  // --- Collision-aware movement (wall slide) - 3D version ---
+  moveWithCollision_3D(moveX, moveY) {
+    let moved = false;
+
+    const nextX = this.posX + moveX;
+    const nextY = this.posY + moveY;
+    if (!isWorldBlocked(nextX, this.posY, 0.2)) {
+      this.posX = nextX;
+      moved = true;
+    }
+    if (!isWorldBlocked(this.posX, nextY, 0.2)) {
+      this.posY = nextY;
+      moved = true;
+    }
+
+    if (moved) return true;
+
+    const intentLength = Math.hypot(moveX, moveY);
+    if (intentLength <= 0.0001) return false;
+
+    const dirX = moveX / intentLength;
+    const dirY = moveY / intentLength;
+    // In 3D: perpendicular direction is calculated the same way
     const sideX = -dirY;
     const sideY = dirX;
     const sideStep = 0.18;

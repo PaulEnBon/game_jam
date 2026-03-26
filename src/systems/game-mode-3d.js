@@ -150,8 +150,8 @@ class Game3DMode extends GameModeBase {
         
         g.push();
         // Position zombie: in p5.js WEBGL, Y+ points DOWN (not up)
-        // Raise zombie slightly higher
-        g.translate(orb.posX, -1.4, orb.posY);
+        // Feet should rest on ground at Y=-0.5, legs at y:0.2, so center at -0.7
+        g.translate(orb.posX, -0.7, orb.posY);
         g.rotateY(orb.bodyAngle || 0);
         
         // Set default fill for zombie parts

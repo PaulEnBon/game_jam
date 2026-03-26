@@ -349,6 +349,35 @@ canvas {
   font-size: 0.95rem;
 }
 
+.volume-setting {
+  margin-bottom: 12px;
+}
+
+.volume-setting label {
+  display: block;
+  color: #d9e2ff;
+  margin-bottom: 6px;
+}
+
+.volume-control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#volume-input {
+  flex: 1;
+  accent-color: #7dff8a;
+  cursor: pointer;
+}
+
+#volume-value {
+  min-width: 56px;
+  text-align: right;
+  color: #9df3d2;
+  font-size: 0.95rem;
+}
+
 #settings-status {
   min-height: 1.2em;
   color: #a7b3d8;

@@ -51,71 +51,105 @@ class GameModeBase {
   }
 
   drawMinimap() {
-    // Bottom-left HUD position
-    const mapSize = 110;
-    const mapX = 10;
-    const mapY = SCREEN_HEIGHT - mapSize - 10;
+    // Taille réduite - prend jusqu'à 40% de l'écran
+    const mmSize = Math.floor(Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.40);
+    const mmX = SCREEN_WIDTH - mmSize - 14;
+    const mmY = 10;  // En haut à droite
+    const mapWidth = this.gameManager.mapWidth;
+    const mapHeight = this.gameManager.mapHeight;
+    const tilePixels = mmSize / mapWidth;
 
     push();
-    fill(20, 20, 30, 200);
-    stroke(100, 150, 200, 180);
-    strokeWeight(2);
-    rect(mapX, mapY, mapSize, mapSize);
+    fill(0, 0, 0, 220);
+    stroke(80, 80, 80, 255);
+    strokeWeight(3);
+    rect(mmX, mmY, mmSize, mmSize, 6);
 
-    // Scale and offset for world-to-minimap transform
-    const scale = mapSize / MAP_TILE_COUNT;
-
-    // Draw world tiles (corrupted in red, walkable in dark green)
-    for (let row = 0; row < MAP_TILE_COUNT; row++) {
-      for (let col = 0; col < MAP_TILE_COUNT; col++) {
-        const tileType = worldTileMap[row][col];
-        const px = mapX + col * scale;
-        const py = mapY + row * scale;
-
-        if (tileType === 0) {
-          fill(30, 80, 30, 128);  // Walkable
-        } else if (tileType === 6) {
-          fill(180, 30, 30, 160);  // Corruption
-        } else {
-          fill(60, 60, 80, 120);  // Walls/obstacles
+    // Tiles - avec contour pour mieux les voir
+    for (let row = 0; row < mapHeight; row++) {
+      for (let col = 0; col < mapWidth; col++) {
+        const t = worldTileMap[row][col];
+        if (t === 0) continue;
+        switch (t) {
+          case 1: fill(130, 130, 130, 230); break;
+          case 2: fill(134, 96, 67, 230); break;
+          case 3: fill(76, 155, 60, 230); break;
+          case 4: fill(90, 130, 90, 230); break;
+          case 5: fill(220, 195, 100, 230); break;
+          case 6: fill(220, 30, 30, 240); break;
+          case 7: fill(150, 108, 74, 230); break;
+          case 8: fill(90, 205, 235, 240); break;
+          case 9: fill(150, 82, 72, 240); break;
+          case 10: fill(255, 155, 215, 240); break;
+          case 11: fill(150, 210, 255, 240); break;
+          case 12: fill(100, 100, 120, 220); break;
+          default: fill(100, 100, 100, 230);
         }
-        noStroke();
-        rect(px, py, scale + 0.5, scale + 0.5);
+        stroke(40, 40, 40, 100);  // Petit contour sombre pour séparation
+        strokeWeight(0.5);
+        rect(mmX + col * tilePixels, mmY + row * tilePixels, tilePixels, tilePixels);
       }
     }
 
-    // Draw player (blue dot) and rotation direction
-    const playerMapX = mapX + this.gameManager.player.posX * scale;
-    const playerMapY = mapY + this.gameManager.player.posY * scale;
-
-    fill(100, 180, 255);
-    circle(playerMapX, playerMapY, 5);
-
-    const dirX = Math.cos(this.gameManager.player.angle) * 8;
-    const dirY = Math.sin(this.gameManager.player.angle) * 8;
-    stroke(100, 180, 255);
-    strokeWeight(1.5);
-    line(playerMapX, playerMapY, playerMapX + dirX, playerMapY + dirY);
-
-    // Draw orbs (enemies) in yellow/red
+    // Orbs / enemies (colour reflects state)
+    noStroke();
     for (const orb of this.gameManager.orbs) {
-      const orbMapX = mapX + orb.posX * scale;
-      const orbMapY = mapY + orb.posY * scale;
-      fill(orb.isSafe() ? [255, 220, 60] : [255, 80, 80]);
-      noStroke();
-      circle(orbMapX, orbMapY, 3);
+      let col;
+      if (orb.isSafe())          col = color(80, 255, 120);
+      else if (orb.isWarning())  col = color(255, 180, 40);
+      else if (orb.isChasing())  col = color(255, 50, 50);
+      else                       col = color(180, 70, 70);
+      fill(col);
+      const ox = mmX + orb.posX * tilePixels;
+      const oy = mmY + orb.posY * tilePixels;
+      circle(ox, oy, 10);
     }
 
-    // Draw objective (nearest beacon or extraction portal)
-    const objective = this.gameManager.getCurrentObjectiveTarget();
-    if (objective) {
-      const objX = mapX + objective.x * scale;
-      const objY = mapY + objective.y * scale;
-      noFill();
-      stroke(150, 230, 255);
-      strokeWeight(1.5);
-      circle(objX, objY, 6);
+    // World modules
+    noStroke();
+    for (const wm of this.gameManager.worldModules) {
+      if (wm.type === "aegis") fill(90, 230, 255);
+      else if (wm.type === "emp") fill(170, 240, 255);
+      else fill(200, 130, 255);
+      const mx = mmX + wm.posX * tilePixels;
+      const my = mmY + wm.posY * tilePixels;
+      rect(mx - 4, my - 4, 8, 8, 1);
     }
+
+    // Drops
+    noStroke();
+    for (const drop of this.gameManager.drops) {
+      if (drop.type === "ammo") fill(255, 220, 110);
+      else if (drop.type === "score") fill(255, 255, 140);
+      else if (drop.type === "pulse") fill(220, 170, 255);
+      else if (drop.type === "rounds") fill(255, 175, 105);
+      else fill(170, 225, 255);
+      const dx = mmX + drop.posX * tilePixels;
+      const dy = mmY + drop.posY * tilePixels;
+      circle(dx, dy, 6);
+    }
+
+    // Punch Machine
+    noStroke();
+    if (this.gameManager.punchMachine) {
+      const mx = mmX + this.gameManager.punchMachine.posX * tilePixels;
+      const my = mmY + this.gameManager.punchMachine.posY * tilePixels;
+      fill(235, 120, 255);
+      rect(mx - 4, my - 4, 8, 8, 1);
+    }
+
+    // Player
+    noStroke();
+    const px = mmX + this.gameManager.player.posX * tilePixels;
+    const py = mmY + this.gameManager.player.posY * tilePixels;
+    fill(100, 180, 255);
+    circle(px, py, 10);
+
+    // Direction arrow
+    stroke(100, 180, 255);
+    strokeWeight(2);
+    const arrowLen = 15;
+    line(px, py, px + Math.cos(this.gameManager.player.angle) * arrowLen, py + Math.sin(this.gameManager.player.angle) * arrowLen);
 
     pop();
   }
