@@ -48,6 +48,7 @@ class Bomb {
     }
   }
 
+
   isDone() { return this.done; }
 }
 window.Bomb = Bomb;
@@ -2446,8 +2447,6 @@ class GameManager {
         }
       }
     }
-  }
-
   // --- Entity updates ---
   updateOrbs(dt) {
     const now = millis();
@@ -5898,7 +5897,11 @@ class GameManager {
     });
   }
   */
+}
+window.GameManager = GameManager;
+window.preloadZombieSkinTexture = preloadZombieSkinTexture;
 
+  // Pause current music
   // Pause current music
   /*
   pauseMusic() {
@@ -5968,4 +5971,3 @@ class GameManager {
     }
   }
   */
-}
