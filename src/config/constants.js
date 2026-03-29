@@ -77,14 +77,18 @@ const CAMERA_PITCH_PIXEL_RATIO = 0.50; // multiplied by screen height (increased
 const CAMERA_JUMP_PIXEL_RATIO  = 0.22; // multiplied by screen height
 
 // --- Weapon ---
-const WEAPON_START_AMMO        = 12;
-const WEAPON_MAX_AMMO          = 24;
-const WEAPON_FIRE_COOLDOWN_MS  = 170;
-const WEAPON_RANGE             = 10.0;
-const WEAPON_AIM_TOLERANCE_PX  = 42;
-const WEAPON_HUNTER_KILL_SCORE = 260;
-const HUNTER_KILL_AMMO_REFUND  = 1;
-const WEAPON_BASE_DAMAGE       = 1;
+const WEAPON_MAGAZINE_SIZE           = 6;     // Balles dans le chargeur
+const WEAPON_INVENTORY_AMMO_MAX      = 18;    // Balles en inventaire maximal
+const WEAPON_TOTAL_AMMO_MAX          = 24;    // Total: 6 + 18
+const WEAPON_START_MAGAZINE          = 6;     // Commencer avec magazine plein
+const WEAPON_START_INVENTORY         = 6;     // Commencer avec 6 balles en inventaire
+const WEAPON_FIRE_COOLDOWN_MS        = 170;
+const WEAPON_RELOAD_DURATION_MS      = 1000;  // 1 seconde pour recharger
+const WEAPON_RANGE                   = 10.0;
+const WEAPON_AIM_TOLERANCE_PX        = 42;
+const WEAPON_HUNTER_KILL_SCORE       = 260;
+const HUNTER_KILL_AMMO_REFUND        = 1;
+const WEAPON_BASE_DAMAGE             = 1;
 
 // Weapon power-ups (Punch Machine)
 const POWERUP_DAMAGE_MULTIPLIER     = 2;

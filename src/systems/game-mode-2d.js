@@ -11,6 +11,44 @@
  */
 
 class Game2DMode extends GameModeBase {
+    /**
+     * Draw all active bullet tracers (white lines, fade out)
+     */
+    drawBulletTracers() {
+      // Utilise la même projection que pour les sprites (billboard)
+      const now = millis();
+      const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
+      const px = this.player.posX;
+      const py = this.player.posY;
+      const pa = this.player.angle;
+      const cameraOffset = this.gameManager.cameraScreenOffsetPx();
+      for (const tracer of this.gameManager.bulletTracers){
+        const age = now - tracer.createdMs;
+        if (age > tracer.durationMs) continue;
+        const alpha = Math.max(0, 255 * (1 - age / tracer.durationMs));
+        // Project world (x, y) to screen (like sprites)
+        function project(x, y) {
+          const relX = x - px;
+          const relY = y - py;
+          const transformX = -relX * Math.sin(pa) + relY * Math.cos(pa);
+          const transformY = relX * Math.cos(pa) + relY * Math.sin(pa);
+          if (transformY <= 0.01) return null; // Derrière la caméra
+          const screenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
+          const screenY = SCREEN_HEIGHT / 2 + cameraOffset;
+          return { x: screenX, y: screenY };
+        }
+        const p0 = project(tracer.x0, tracer.y0);
+        const p1 = project(tracer.x1, tracer.y1);
+        if (!p0 || !p1) continue;
+        push();
+        stroke(255, 255, 255, alpha);
+        strokeWeight(4);
+        const weight = this.gameManager.drasticTracer ? 45 : 4;
+        strokeWeight(weight);
+        line(p0.x, p0.y, p1.x, p1.y);
+        pop();
+      }
+    }
   constructor(gameManager) {
     super(gameManager);
     
@@ -23,11 +61,9 @@ class Game2DMode extends GameModeBase {
     this.zBuffer = gameManager.zBuffer;
     this.rayDirXBuffer = gameManager.rayDirXBuffer;
     this.rayDirYBuffer = gameManager.rayDirYBuffer;
-    
     // Sprite caches
     this.zombieSpriteCache = gameManager.zombieSpriteCache;
     this.collectOrbSpriteCache = gameManager.collectOrbSpriteCache;
-    
     // Game state references
     this.weaponFlashUntilMs = gameManager.weaponFlashUntilMs;
   }
@@ -39,35 +75,128 @@ class Game2DMode extends GameModeBase {
   render() {
     // Step 1: Draw sky and floor background
     this.drawSkyAndFloor();
-
     // Step 2: Prepare pixel buffer
     loadPixels();
-
     // Step 3: Cast all rays and draw textured walls
     this.castAllRays();
-
     // Step 4: Draw all sprites (enemies, collectibles, effects)
     this.drawSpritesToBuffer();
-
     // Step 5: Commit pixels to canvas
     updatePixels();
-
     // Step 6: Post-processing effects
     this.gameManager.drawMotionBlurOverlay();
     this.gameManager.captureMotionBlurFrame();
-
     // Step 7: Draw screen-space overlays with shake
     const shake = this.gameManager.currentShakeOffset();
     push();
     translate(shake.x, shake.y);
     this.drawVignette();
     this.drawMinimap();
+    // --- Bullet tracers (draw under HUD/weapon) ---
+    this.drawBulletTracers();
+    this.drawBombTrajectory2D();
+    this.drawBombs2D();
     this.drawHUD();
+    this.drawPulseEffect2D();
+    // this.gameManager.drawActiveInventoryUI(window); // Function does not exist, removed to prevent error
     this.drawFirstPersonWeapon();
     this.drawCrosshair();
     pop();
   }
 
+  drawBombTrajectory2D() {
+    if (!this.gameManager.isBombAiming) return;
+    
+    const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
+    const cameraOffset = this.gameManager.cameraScreenOffsetPx();
+    
+    // Paramètres identiques à la classe Bomb
+    const speed = 6.0; 
+    const maxDuration = 1.5; // 1500ms
+    const steps = 10;
+    
+    for (let i = 1; i <= steps; i++) {
+      const t = (i / steps) * maxDuration;
+      const dist = speed * t;
+      const wx = this.player.posX + Math.cos(this.player.angle) * dist;
+      const wy = this.player.posY + Math.sin(this.player.angle) * dist;
+      
+      if (isWorldBlocked(wx, wy, 0.2)) break;
+      
+      const relX = wx - this.player.posX;
+      const relY = wy - this.player.posY;
+      const transformX = -relX * Math.sin(this.player.angle) + relY * Math.cos(this.player.angle);
+      const transformY = relX * Math.cos(this.player.angle) + relY * Math.sin(this.player.angle);
+      
+      if (transformY <= 0.1) continue;
+      const sx = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
+      const sy = SCREEN_HEIGHT / 2 + cameraOffset;
+      
+      fill(255, 100, 100, 150 - (i * 10));
+      noStroke();
+      circle(sx, sy, Math.max(2, 10 / transformY));
+    }
+  }
+
+  drawPulseEffect2D() {
+    if (!this.gameManager.pulseEffectActive) return;
+    const elapsed = millis() - this.gameManager.pulseEffectStart;
+    const t = elapsed / 500;
+    if (t > 1) {
+      this.gameManager.pulseEffectActive = false;
+      return;
+    }
+
+    push();
+    noFill();
+    stroke(100, 200, 255, 200 * (1 - t));
+    strokeWeight(15 * (1 - t));
+    const r = SCREEN_WIDTH * t;
+    ellipse(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + this.gameManager.cameraScreenOffsetPx(), r, r * 0.6);
+    pop();
+  }
+
+  drawBombs2D() {
+    const bombs = this.gameManager.bombs || [];
+    const fovScale = SCREEN_WIDTH / (2 * Math.tan(FIELD_OF_VIEW_RADIANS / 2));
+    const px = this.player.posX;
+    const py = this.player.posY;
+    const pa = this.player.angle;
+    const cameraOffset = this.gameManager.cameraScreenOffsetPx();
+
+    const project = (x, y) => {
+      const relX = x - px;
+      const relY = y - py;
+      const transformX = -relX * Math.sin(pa) + relY * Math.cos(pa);
+      const transformY = relX * Math.cos(pa) + relY * Math.sin(pa);
+      if (transformY <= 0.1) return null;
+      const screenX = SCREEN_WIDTH / 2 + (transformX / transformY) * fovScale;
+      const screenY = SCREEN_HEIGHT / 2 + cameraOffset;
+      return { x: screenX, y: screenY, transformY };
+    };
+
+    for (const bomb of bombs) {
+      const p = project(bomb.x, bomb.y);
+      if (!p) continue;
+
+      if (!bomb.exploded) {
+        const size = (0.3 / p.transformY) * fovScale;
+        fill(40, 40, 45);
+        stroke(255, 100, 100);
+        strokeWeight(1);
+        ellipse(p.x, p.y, size, size);
+      } else {
+        const elapsed = millis() - bomb.explosionTime;
+        const progress = elapsed / 800;
+        const radius = bomb.explosionRadius * Math.sin(progress * Math.PI);
+        const screenRadius = (radius / p.transformY) * fovScale;
+        noFill();
+        stroke(255, 150, 50, 200 * (1 - progress));
+        strokeWeight(4);
+        ellipse(p.x, p.y, screenRadius * 2, screenRadius * 2);
+      }
+    }
+  }
   /**
    * Draw sky and floor background with exponential fog gradient
    * Horror mode: black sky + white floor with gradient darkening
@@ -310,7 +439,7 @@ class Game2DMode extends GameModeBase {
       allSprites.push({ x: wm.posX, y: wm.posY, dist, type: "world-module", obj: wm });
     }
 
-    for (const drop of this.gameManager.drops) {
+    for (const drop of this.gameManager.drops){
       const dx = drop.posX - playerX;
       const dy = drop.posY - playerY;
       const distSq = dx * dx + dy * dy;
@@ -382,6 +511,22 @@ class Game2DMode extends GameModeBase {
     const muzzleX = gripCenterX + Math.cos(barrelAngle) * barrelLength;
     const muzzleY = gripCenterY + Math.sin(barrelAngle) * barrelLength - recoilFrac * VIEWMODEL_RECOIL_PX;
 
+    // Color variations based on selected slot
+    let barrelColor = [110, 110, 115];
+    let slideColor = [90, 90, 95];
+    let isPistol = true;
+    
+    if (this.gameManager.selectedHotbarSlot === 2) {
+      // Bomb - Red theme
+      barrelColor = [255, 100, 100];
+      isPistol = false;
+    } else if (this.gameManager.selectedHotbarSlot === 3) {
+      // Pulse - Purple theme
+      barrelColor = [180, 100, 255];
+      slideColor = [130, 50, 200];
+      isPistol = false;
+    }
+
     // --- ARM ---
     push();
     stroke(0);
@@ -411,11 +556,38 @@ class Game2DMode extends GameModeBase {
     push();
     noStroke();
 
+    if (!isPistol) {
+      // Dessine un objet (Bombe ou Pulse) à la place du pistolet
+      const objSize = 50 * s;
+      const objX = gripCenterX;
+      const objY = gripCenterY - 15 * s - recoilFrac * VIEWMODEL_RECOIL_PX;
+      
+      if (this.gameManager.selectedHotbarSlot === 2) {
+        // Bombe : Sphère sombre avec une mèche
+        fill(40, 40, 45);
+        ellipse(objX, objY, objSize, objSize);
+        fill(255, 100, 100); 
+        ellipse(objX - 5*s, objY - 5*s, objSize * 0.4, objSize * 0.4);
+        stroke(150, 100, 50);
+        strokeWeight(3 * s);
+        line(objX, objY - objSize/2, objX + 10 * s, objY - objSize/2 - 15 * s);
+      } else {
+        // Pulse Core : Noyau énergétique brillant
+        fill(barrelColor);
+        rectMode(CENTER);
+        rect(objX, objY, objSize * 0.8, objSize * 0.8, 8 * s);
+        fill(255, 255, 255, 150 + 100 * Math.sin(millis() * 0.01));
+        ellipse(objX, objY, objSize * 0.5, objSize * 0.5);
+      }
+      pop();
+      return; // On arrête ici pour ne pas dessiner le pistolet
+    }
+
     const barrelRadius = 10 * s;
     const muzzleRadius = 12 * s;
     
     // Barrel
-    fill(110, 110, 115);
+    fill(barrelColor);
     quad(
       gripCenterX - barrelRadius, gripCenterY,
       muzzleX - barrelRadius, muzzleY,
@@ -423,7 +595,7 @@ class Game2DMode extends GameModeBase {
       gripCenterX - barrelRadius * 0.8, gripCenterY - 3 * s
     );
 
-    fill(200, 200, 205);
+    fill(barrelColor[0] + 50, barrelColor[1] + 50, barrelColor[2] + 50);
     quad(
       gripCenterX + barrelRadius, gripCenterY,
       muzzleX + barrelRadius, muzzleY,
@@ -431,7 +603,7 @@ class Game2DMode extends GameModeBase {
       gripCenterX + barrelRadius * 0.8, gripCenterY - 3 * s
     );
 
-    fill(170, 170, 175);
+    fill(barrelColor[0] + 30, barrelColor[1] + 30, barrelColor[2] + 30);
     quad(
       gripCenterX - barrelRadius * 0.8, gripCenterY - 3 * s,
       gripCenterX + barrelRadius * 0.8, gripCenterY - 3 * s,
@@ -441,7 +613,7 @@ class Game2DMode extends GameModeBase {
 
     // Slide
     const slideWidth = 22 * s;
-    fill(90, 90, 95);
+    fill(slideColor);
     quad(
       gripCenterX - slideWidth, gripCenterY - 3 * s,
       muzzleX - slideWidth, muzzleY - 3 * s,
@@ -449,7 +621,7 @@ class Game2DMode extends GameModeBase {
       gripCenterX + slideWidth, gripCenterY + 3 * s
     );
 
-    fill(70, 70, 75);
+    fill(slideColor[0] - 20, slideColor[1] - 20, slideColor[2] - 20);
     quad(
       gripCenterX - slideWidth, gripCenterY - 3 * s,
       gripCenterX - slideWidth * 1.1, gripCenterY,
@@ -457,7 +629,7 @@ class Game2DMode extends GameModeBase {
       muzzleX - slideWidth, muzzleY - 3 * s
     );
 
-    fill(140, 140, 145);
+    fill(slideColor[0] + 50, slideColor[1] + 50, slideColor[2] + 50);
     quad(
       gripCenterX + slideWidth, gripCenterY + 8 * s,
       gripCenterX + slideWidth * 1.1, gripCenterY + 16 * s,
@@ -591,3 +763,6 @@ class Game2DMode extends GameModeBase {
     };
   }
 }
+
+// Ensure Game2DMode is available globally
+window.Game2DMode = Game2DMode;

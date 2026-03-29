@@ -50,7 +50,7 @@ class Zombie3DSceneManager {
    * Add zombie to 3D scene
    */
   addZombie(worldX, worldY, bodyAngle = 0) {
-    const zomModel = new Zombie3DModel(this.zombieSkinTexture);
+    const zomModel = new Zombie3DModel();
     this.zombies3D.push({
       model: zomModel,
       x: worldX,

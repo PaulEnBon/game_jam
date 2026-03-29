@@ -7,137 +7,42 @@
  */
 
 class Zombie3DModel {
-  constructor(textureSkin) {
+  constructor() {
     /**
      * Paramètres du modèle (en unités p5.js)
      * Basé sur proportions Minecraft canoniques
      */
-    this.textureSkin = textureSkin;
-    
     // Dimensions de chaque partie (width, height, depth)
-    // Basé sur les proportions Minecraft (head: 8x8x8, body: 8x12x4, arms/legs: 4x12x4)
-    this.headSize = { w: 0.25, h: 0.25, d: 0.25 };   // Head (réduit)
-    this.bodySize = { w: 0.22, h: 0.3, d: 0.12 };    // Body/torso (plus petit)
-    this.armSize = { w: 0.12, h: 0.4, d: 0.12 };     // Arms (fins)
-    this.legSize = { w: 0.12, h: 0.4, d: 0.12 };     // Legs (fins)
+    // Mise à l'échelle pour que le total fasse exactement 1.0 unité de haut
+    this.headSize = { w: 0.25, h: 0.25, d: 0.25 };   // 8/32
+    this.bodySize = { w: 0.25, h: 0.375, d: 0.125 }; // 8x12x4 / 32
+    this.armSize  = { w: 0.125, h: 0.375, d: 0.125 };// 4x12x4 / 32
+    this.legSize  = { w: 0.125, h: 0.375, d: 0.125 };// 4x12x4 / 32
 
     // Positions relatives au center
-    // Zombie feet should rest on ground at Y = -0.5
-    // Center of zombie = -0.5 - 0.2 (half leg height) = -0.7
-    this.headPos = { x: 0, y: -0.5, z: 0 };          // Head on top
-    this.bodyPos = { x: 0, y: -0.15, z: 0 };         // Body/torso center
-    this.armLeftPos = { x: -0.2, y: -0.08, z: 0 };   // Left arm at shoulder
-    this.armRightPos = { x: 0.2, y: -0.08, z: 0 };   // Right arm at shoulder
-    this.legLeftPos = { x: -0.08, y: 0.2, z: 0 };    // Left leg below hips
-    this.legRightPos = { x: 0.08, y: 0.2, z: 0 };    // Right leg below hips
+    // Ancrage au sol (Y=0), montée vers le haut (Y négatif en p5)
+    this.legPos      = { y: -0.1875 }; // Mi-hauteur des jambes
+    this.bodyPos     = { y: -0.5625 }; // Mi-hauteur du corps
+    this.headPos     = { y: -0.875 };  // Mi-hauteur tête
+    this.armPos      = { y: -0.5625 }; // Alignés sur le corps
+    this.legOffset   = 0.0625;         // Espace entre les jambes
+    this.armOffset   = 0.1875;         // Espace bras
 
     // Animation state
     this.walkPhase = 0;
     this.walkSpeed = 0.15;
     this.bobAmount = 0.1;
     this.armSwingAmount = 0.4;
-
-    // Texture UVs (normalized coordinates for 64×64 skin)
-    this.skinLayout = {
-      head_front: { x: 8, y: 8, w: 8, h: 8 },
-      head_right: { x: 16, y: 8, w: 8, h: 8 },
-      head_back: { x: 24, y: 8, w: 8, h: 8 },
-      head_left: { x: 32, y: 8, w: 8, h: 8 },
-      head_top: { x: 8, y: 0, w: 8, h: 8 },
-      head_bottom: { x: 16, y: 0, w: 8, h: 8 },
-      
-      body_front: { x: 20, y: 20, w: 8, h: 12 },
-      body_right: { x: 28, y: 20, w: 8, h: 12 },
-      body_back: { x: 32, y: 20, w: 8, h: 12 },
-      body_left: { x: 12, y: 20, w: 8, h: 12 },
-      body_top: { x: 20, y: 20, w: 8, h: 0 },  // Thin
-      body_bottom: { x: 28, y: 32, w: 8, h: 0 },
-      
-      arm_front: { x: 44, y: 20, w: 4, h: 12 },
-      arm_right: { x: 48, y: 20, w: 4, h: 12 },
-      arm_back: { x: 52, y: 20, w: 4, h: 12 },
-      arm_left: { x: 40, y: 20, w: 4, h: 12 },
-      
-      leg_front: { x: 4, y: 20, w: 4, h: 12 },
-      leg_right: { x: 8, y: 20, w: 4, h: 12 },
-      leg_back: { x: 12, y: 20, w: 4, h: 12 },
-      leg_left: { x: 0, y: 20, w: 4, h: 12 },
-    };
   }
 
   /**
-   * Crée une boîte 3D textuurée
-   * Applique la texture Minecraft correctement mappée
+   * Dessine un membre (Cube simple sans texture)
    */
-  drawTexturedBox(x, y, z, width, height, depth, texArray) {
-    push();
-    translate(x, y, z);
-
-    // Normaliser les UV (64x64 → 0..1)
-    const fullW = 64;
-    const fullH = 64;
-
-    const getUV = (texInfo) => ({
-      x1: texInfo.x / fullW,
-      y1: texInfo.y / fullH,
-      x2: (texInfo.x + texInfo.w) / fullW,
-      y2: (texInfo.y + texInfo.h) / fullH,
-    });
-
-    if (this.textureSkin) {
-      texture(this.textureSkin);
-      textureMode(NORMAL);
-    }
-
-    // TOP
-    beginShape();
-    vertex(-width / 2, -height / 2, -depth / 2);
-    vertex(width / 2, -height / 2, -depth / 2);
-    vertex(width / 2, -height / 2, depth / 2);
-    vertex(-width / 2, -height / 2, depth / 2);
-    endShape(CLOSE);
-
-    // BOTTOM
-    beginShape();
-    vertex(-width / 2, height / 2, -depth / 2);
-    vertex(-width / 2, height / 2, depth / 2);
-    vertex(width / 2, height / 2, depth / 2);
-    vertex(width / 2, height / 2, -depth / 2);
-    endShape(CLOSE);
-
-    // FRONT
-    beginShape();
-    vertex(-width / 2, -height / 2, depth / 2);
-    vertex(width / 2, -height / 2, depth / 2);
-    vertex(width / 2, height / 2, depth / 2);
-    vertex(-width / 2, height / 2, depth / 2);
-    endShape(CLOSE);
-
-    // BACK
-    beginShape();
-    vertex(-width / 2, -height / 2, -depth / 2);
-    vertex(-width / 2, height / 2, -depth / 2);
-    vertex(width / 2, height / 2, -depth / 2);
-    vertex(width / 2, -height / 2, -depth / 2);
-    endShape(CLOSE);
-
-    // RIGHT
-    beginShape();
-    vertex(width / 2, -height / 2, -depth / 2);
-    vertex(width / 2, -height / 2, depth / 2);
-    vertex(width / 2, height / 2, depth / 2);
-    vertex(width / 2, height / 2, -depth / 2);
-    endShape(CLOSE);
-
-    // LEFT
-    beginShape();
-    vertex(-width / 2, -height / 2, -depth / 2);
-    vertex(-width / 2, height / 2, -depth / 2);
-    vertex(-width / 2, height / 2, depth / 2);
-    vertex(-width / 2, -height / 2, depth / 2);
-    endShape(CLOSE);
-
-    pop();
+  drawMinecraftPart(g, x, y, z, w, h, d, uvSet) {
+    g.push();
+    g.translate(x, y, z);
+    g.box(w, h, d);
+    g.pop();
   }
 
   /**
@@ -171,118 +76,34 @@ class Zombie3DModel {
     // Use provided graphics context or fall back to global p5.js functions
     const isWebGL = g !== null;
     
-    // Enable lighting for better visibility
-    if (isWebGL) {
-      g.lights();
-      g.noStroke();
-    } else {
-      lights();
-      noStroke();
-    }
+    // Suppression des appels redondants à lights() et console.log
+    if (isWebGL) g.noStroke(); else noStroke();
     
-    console.log(`[Zombie3D] Rendering zombie (webgl=${isWebGL}, phase=${this.walkPhase.toFixed(2)})`);
+    const phase = this.walkPhase;
+    const swing = Math.sin(phase) * this.armSwingAmount;
+    const ctx = isWebGL ? g : globalThis;
+
+    // Jambes
+    this.drawMinecraftPart(ctx, -this.legOffset, this.legPos.y, 0, this.legSize.w, this.legSize.h, this.legSize.d, null);
+    this.drawMinecraftPart(ctx, this.legOffset, this.legPos.y, 0, this.legSize.w, this.legSize.h, this.legSize.d, null);
     
-    const headBob = Math.sin(this.walkPhase) * this.bobAmount;
-    const bodyBob = Math.sin(this.walkPhase) * (this.bobAmount * 0.5);
-    const armSwing = Math.sin(this.walkPhase) * this.armSwingAmount;
-    const legSwing = Math.sin(this.walkPhase) * this.armSwingAmount;
+    // Corps
+    this.drawMinecraftPart(ctx, 0, this.bodyPos.y, 0, this.bodySize.w, this.bodySize.h, this.bodySize.d, null);
     
-    // TÊTE - Head
-    if (isWebGL) {
-      g.push();
-      g.translate(this.headPos.x, this.headPos.y + headBob, this.headPos.z);
-      g.fill(52, 109, 71);  // Zombie head green
-      g.box(this.headSize.w, this.headSize.h, this.headSize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.headPos.x, this.headPos.y + headBob, this.headPos.z);
-      fill(52, 109, 71);
-      box(this.headSize.w, this.headSize.h, this.headSize.d, 1, 1);
-      pop();
-    }
+    // Tête
+    this.drawMinecraftPart(ctx, 0, this.headPos.y, 0, this.headSize.w, this.headSize.h, this.headSize.d, null);
+    
+    // Bras (avec animation de balancement)
+    ctx.push();
+    ctx.translate(-this.armOffset, this.armPos.y, 0);
+    ctx.rotateX(swing);
+    this.drawMinecraftPart(ctx, 0, 0, 0, this.armSize.w, this.armSize.h, this.armSize.d, null);
+    ctx.pop();
 
-    // CORPS - Body
-    if (isWebGL) {
-      g.push();
-      g.translate(this.bodyPos.x, this.bodyPos.y + bodyBob, this.bodyPos.z);
-      g.fill(71, 109, 46);  // Zombie body green
-      g.box(this.bodySize.w, this.bodySize.h, this.bodySize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.bodyPos.x, this.bodyPos.y + bodyBob, this.bodyPos.z);
-      fill(71, 109, 46);
-      box(this.bodySize.w, this.bodySize.h, this.bodySize.d, 1, 1);
-      pop();
-    }
-
-    // BRAS GAUCHE - Left arm
-    if (isWebGL) {
-      g.push();
-      g.translate(this.armLeftPos.x, this.armLeftPos.y + bodyBob, this.armLeftPos.z);
-      g.rotateX(armSwing);  // Swing forward/backward (not rotateZ)
-      g.fill(130, 150, 120);  // Zombie arm green
-      g.box(this.armSize.w, this.armSize.h, this.armSize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.armLeftPos.x, this.armLeftPos.y + bodyBob, this.armLeftPos.z);
-      rotateX(armSwing);
-      fill(130, 150, 120);
-      box(this.armSize.w, this.armSize.h, this.armSize.d, 1, 1);
-      pop();
-    }
-
-    // BRAS DROIT - Right arm
-    if (isWebGL) {
-      g.push();
-      g.translate(this.armRightPos.x, this.armRightPos.y + bodyBob, this.armRightPos.z);
-      g.rotateX(-armSwing);  // Swing forward/backward opposite side
-      g.fill(130, 150, 120);  // Zombie arm green
-      g.box(this.armSize.w, this.armSize.h, this.armSize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.armRightPos.x, this.armRightPos.y + bodyBob, this.armRightPos.z);
-      rotateX(-armSwing);
-      fill(130, 150, 120);
-      box(this.armSize.w, this.armSize.h, this.armSize.d, 1, 1);
-      pop();
-    }
-
-    // JAMBE GAUCHE - Left leg
-    if (isWebGL) {
-      g.push();
-      g.translate(this.legLeftPos.x, this.legLeftPos.y + bodyBob, this.legLeftPos.z);
-      g.rotateX(legSwing);  // Swing forward/backward
-      g.fill(46, 46, 46);  // Zombie leg dark
-      g.box(this.legSize.w, this.legSize.h, this.legSize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.legLeftPos.x, this.legLeftPos.y + bodyBob, this.legLeftPos.z);
-      rotateX(legSwing);
-      fill(46, 46, 46);
-      box(this.legSize.w, this.legSize.h, this.legSize.d, 1, 1);
-      pop();
-    }
-
-    // JAMBE DROITE - Right leg
-    if (isWebGL) {
-      g.push();
-      g.translate(this.legRightPos.x, this.legRightPos.y + bodyBob, this.legRightPos.z);
-      g.rotateX(-legSwing);  // Swing forward/backward opposite side
-      g.fill(46, 46, 46);  // Zombie leg dark
-      g.box(this.legSize.w, this.legSize.h, this.legSize.d, 1, 1);
-      g.pop();
-    } else {
-      push();
-      translate(this.legRightPos.x, this.legRightPos.y + bodyBob, this.legRightPos.z);
-      rotateX(-legSwing);
-      fill(46, 46, 46);
-      box(this.legSize.w, this.legSize.h, this.legSize.d, 1, 1);
-      pop();
-    }
+    ctx.push();
+    ctx.translate(this.armOffset, this.armPos.y, 0);
+    ctx.rotateX(-swing);
+    this.drawMinecraftPart(ctx, 0, 0, 0, this.armSize.w, this.armSize.h, this.armSize.d, null);
+    ctx.pop();
   }
 }

@@ -9,6 +9,49 @@
     - Full render pipeline (sky, raycasting, sprites, overlays)
 */
 
+class Bomb {
+  constructor(x, y, angle) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.speed = 6.0; // Vitesse de lancer
+    this.timer = 1500; // Explose après 1.5s
+    this.exploded = false;
+    this.explosionRadius = 5;
+    this.explosionTime = 0;
+    this.done = false;
+  }
+
+  update(dtMs) {
+    if (this.exploded) {
+      if (millis() - this.explosionTime > 800) {
+        this.done = true;
+      }
+      return;
+    }
+
+    this.timer -= dtMs;
+    
+    const nextX = this.x + Math.cos(this.angle) * this.speed * (dtMs / 1000);
+    const nextY = this.y + Math.sin(this.angle) * this.speed * (dtMs / 1000);
+    
+    if (!isWorldBlocked(nextX, nextY, 0.2)) {
+      this.x = nextX;
+      this.y = nextY;
+    } else {
+      this.timer = 0; // Explose si elle touche un mur
+    }
+
+    if (this.timer <= 0) {
+      this.exploded = true;
+      this.explosionTime = millis();
+    }
+  }
+
+  isDone() { return this.done; }
+}
+window.Bomb = Bomb;
+
 window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
 window.PRELOADED_ZOMBIE_SKIN_PIXELS = null;
 
@@ -16,9 +59,11 @@ function preloadZombieSkinTexture() {
   // Load Zombie texture from embedded base64 data or external file
   // En mode fichier (file://), ou si Zombie.png n'existe pas, utilise les données embedded
   
+  const isLocalFile = window.location.protocol === 'file:';
+  
   try {
     // First, try to load from external file (if on localhost server)
-    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    if (!isLocalFile && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
       console.log("ℹ️  Attempting to load Zombie.png from server...");
       window.PRELOADED_ZOMBIE_SKIN_IMAGE = loadImage(
         'Zombie.png',
@@ -36,7 +81,7 @@ function preloadZombieSkinTexture() {
         }
       );
     } else {
-      console.log("ℹ️  Running via file:// protocol - loading embedded zombie texture");
+      if (isLocalFile) console.log("ℹ️  Running via file:// protocol - loading embedded zombie texture");
       loadZombieTextureFromEmbedded();
     }
   } catch (err) {
@@ -47,7 +92,7 @@ function preloadZombieSkinTexture() {
 
 function loadZombieTextureFromEmbedded() {
   // Charge la texture depuis les données embedded base64
-  if (!window.EMBEDDED_ZOMBIE_SKIN_DATA_URI) {
+  if (!window.EMBEDDED_ZOMBIE_SKIN_DATA_URI || typeof window.EMBEDDED_ZOMBIE_SKIN_DATA_URI !== 'string' || window.EMBEDDED_ZOMBIE_SKIN_DATA_URI.trim() === "") {
     console.warn("❌ Embedded zombie texture data not available");
     window.PRELOADED_ZOMBIE_SKIN_IMAGE = null;
     return;
@@ -124,100 +169,19 @@ function drawMinecraftBlock(g, blockType, nightFactor = 0) {
 
 class GameManager {
   constructor() {
-    this.gameState = "waiting";  // "waiting" | "playing" | "paused" | "game-over"
-    console.log("🎮 GameManager initialized - state: waiting");
-    this.player = new Player(MAP_TILE_COUNT / 2 + 0.5, MAP_TILE_COUNT / 2 + 0.5);
-    this.mapWidth = MAP_TILE_COUNT;   // Initialize map dimensions
-    this.mapHeight = MAP_TILE_COUNT;  // Will update when map resizes per wave
-    this.orbs = [];
-    this.particles = [];
-    this.worldModules = [];
-    this.drops = [];
-    this.punchMachine = null;
-
+    // Bindings
+    // Inventory initialization
     this.inventory = {
       ammoPack: 0,
-      scoreShard: 0,
-      pulseCore: 0,
+      bomb: 0,
+      pulseCore: 0
     };
-    this.selectedHotbarSlot = 1;
-
-    this.hudToastText = "";
-    this.hudToastColor = [220, 240, 255];
-    this.hudToastUntilMs = 0;
-
-    this.score = 0;
-    this.finalScore = 0;
-    this.gameOverReason = "";
-    this.gameWon = false;
-
-    this.killStreak = 0;
-    this.killStreakUntilMs = 0;
-
-    this.waveNumber = 0;
-    this.waveState = "preparing"; // "preparing" | "spawning" | "in-progress"
-    this.waveEnemiesTotal = 0;
-    this.waveEnemiesSpawned = 0;
-    this.waveEnemiesKilled = 0;
-    this.waveKillsRequired = 0;  // Kills needed to complete the wave
-    this.waveMaxSimultaneous = 0;
-    this.waveSpawnIntervalMs = 0;
-    this.nextWaveActionMs = 0;
-
-    this.sprintEnergy = SPRINT_ENERGY_MAX;
-    this.sprintActive = false;
-    this.lastSprintUseMs = 0;
-
-    this.powerDamageUntilMs = 0;
-    this.powerRapidUntilMs = 0;
-    this.powerInstakillUntilMs = 0;
-    this.punchMachineInteractLatch = false;
-
-    // Weapon
-    this.weaponAmmo = WEAPON_START_AMMO;
-    this.weaponLastShotMs = 0;
-    this.weaponFlashUntilMs = 0;
-
-    this.lastModuleSpawnMs = 0;
-    this.activeAegisUntilMs = 0;
-    this.activeChronoUntilMs = 0;
-    this.orbStunUntilMap = new Map();
-
-    this.gameStartMs = 0;
-    this.lastSpawnMs = 0;
-    this.lastCorruptionTime = 0;
-    this.corruptionLayer = 0;         // how many layers of border corruption
-    this.pendingCorruptionTiles = [];
-
-    // Screen shake
-    this.shakeIntensity = 0;         // current shake in pixels
-    this.shakeDuration = 0;
-    this.shakeStartMs = 0;
-
-    // DOM references (cached once)
-    this.startOverlay     = null;
-    this.gameOverOverlay  = null;
-    this.gameOverTitleEl  = null;
-    this.finalScoreEl     = null;
-    this.gameOverReasonEl = null;
-    this.restartBtn       = null;
-    this.pauseOverlay     = null;
-    this.resumeBtn        = null;
-    this.pauseSettingsBtn = null;
-    this.pauseRestartBtn  = null;
-    this.startBtn         = null;
-    this.openSettingsBtn  = null;
-    this.settingsOverlay  = null;
-    this.closeSettingsBtn = null;
-    this.resetControlsBtn = null;
-    this.settingsStatusEl = null;
-    this.sensitivityInput = null;
-    this.sensitivityValueEl = null;
-    this.controlLegendEl  = null;
-    this.bindButtons      = [];
-
-    this.pendingRebindAction = null;
-    this.pendingRebindButton = null;
+    this.punchMachinePrice = 2000; // Prix de départ plus accessible
+    this.isBombAiming = false;
+    this.gold = 0;
+    this.weaponLevel = 1;
+    this.SPAWN_INDICATOR_DURATION_MS = 1500; // Durée de l'alerte orange avant le spawn
+    this.INTER_WAVE_DURATION_MS = 5000;      // Temps de pause entre deux vagues
     this.boundCaptureRebindKey = (event) => this.captureRebindKey(event);
     this.canvasEl = null;
 
@@ -227,7 +191,26 @@ class GameManager {
     this.rayDirYBuffer = new Float32Array(RAY_COUNT);
     this.zombieSpriteCache = this.createZombieSpriteCache();
     this.collectOrbSpriteCache = this.createCollectOrbSpriteCache();
-    
+
+    // Initialize player before any code that uses it
+    // Default spawn coordinates (center of map, can be changed as needed)
+    this.player = new Player(12.5, 12.5);
+
+    // Always initialize orbs and particles as empty arrays
+    this.orbs = [];
+    this.particles = [];
+    this.worldModules = [];
+    this.upcomingSpawns = []; // Initialize to prevent "not iterable" error
+    this.drops = [];
+    this.bulletTracers = [];
+
+    this.bombs = [];
+    this.orbStunUntilMap = new Map();
+
+    // --- Correction: map size sync ---
+    this.mapWidth = typeof MAP_TILE_COUNT !== 'undefined' ? MAP_TILE_COUNT : 40;
+    this.mapHeight = typeof MAP_TILE_COUNT !== 'undefined' ? MAP_TILE_COUNT : 40;
+
     // 3D Scene Manager (NEW)
     this.scene3D = new Zombie3DSceneManager();
     this.scene3D.init(window.PRELOADED_ZOMBIE_SKIN_IMAGE);
@@ -236,12 +219,10 @@ class GameManager {
     this.use3DMode = false;  // Désactivé par défaut (activé au startNewGame selon protocole)
     this.isLocalhostServer = isLocalhost;  // Pour endGame/restart
     this.webglGraphics = null;  // p5.Renderer for WEBGL mode
-    console.log("🎮 GameManager init - Protocol:", window.location.protocol, "isLocalhost:", isLocalhost);
-    
     // Initialize rendering mode classes
     this.gameMode2D = new Game2DMode(this);
     this.gameMode3D = new Game3DMode(this);
-    
+    this.drasticTracer = false;
     this.motionBlurEnabled = MOTION_BLUR_ENABLED;
     this.motionBlurBuffer = this.motionBlurEnabled ? this.createMotionBlurBuffer() : null;
     this.motionBlurAmount = 0;
@@ -249,14 +230,60 @@ class GameManager {
     this.prevPlayerPosX = this.player.posX;
     this.prevPlayerPosY = this.player.posY;
     this.prevPlayerAngle = this.player.angle;
-    
-    // Settings - Sensitivity & Audio
-    this.playerSensitivity = SETTINGS_SENSITIVITY_DEFAULT;  // multiplier for look speed
-    this.masterVolume = SETTINGS_VOLUME_DEFAULT;  // 0.0 to 1.0
-    
-    // Floor texture for 3D mode
-    this.floorTexture = null;
-    this.initFloorTexture();
+  }
+
+  // Update all bombs: move, check explosion, clean up
+  updateBombs(dt) {
+    if (!this.bombs) return;
+    for (const bomb of this.bombs) {
+      if (typeof bomb.update === 'function') {
+        const wasExploded = bomb.exploded;
+        bomb.update(dt * 1000); 
+        
+        // Gestion des dégâts lors de l'explosion
+        if (bomb.exploded && !wasExploded) {
+          this.addScreenShake(6, 300);
+          for (let i = this.orbs.length - 1; i >= 0; i--) {
+            const orb = this.orbs[i];
+            if (orb.isHunter()) {
+              const d = Math.hypot(orb.posX - bomb.x, orb.posY - bomb.y);
+              if (d < bomb.explosionRadius) {
+                this.killHunter(orb);
+              }
+            }
+          }
+        }
+      }
+    }
+    // Remove bombs that are done
+    this.bombs = this.bombs.filter(bomb => !(typeof bomb.isDone === 'function' && bomb.isDone()));
+  }
+
+  // Activation du pulse : repousse toutes les unités à moins de 10 blocs
+  activatePulse() {
+    const radius = 10;
+    this.pulseEffectActive = true;
+    this.pulseEffectStart = millis();
+
+    for (const orb of this.orbs) {
+      if (!orb.isHunter()) continue;
+      const dx = orb.posX - this.player.posX;
+      const dy = orb.posY - this.player.posY;
+      const dist = Math.hypot(dx, dy);
+      
+      if (dist < radius) {
+        const pushForce = 5 * (1 - dist / radius);
+        const angle = Math.atan2(dy, dx);
+        const nextX = orb.posX + Math.cos(angle) * pushForce;
+        const nextY = orb.posY + Math.sin(angle) * pushForce;
+        
+        if (!isWorldBlocked(nextX, nextY, orb.radius)) {
+          orb.posX = nextX;
+          orb.posY = nextY;
+        }
+      }
+    }
+    this.addScreenShake(4, 200);
   }
   
   // Load or create a floor texture
@@ -576,6 +603,9 @@ class GameManager {
     this.sprintActive = false;
     this.player.moveSpeed = PLAYER_MOVE_SPEED;
     if (document.exitPointerLock) document.exitPointerLock();
+    // TODO: Pause music
+    // Uncomment when music system is ready
+    // this.pauseMusic();
     this.showPauseOverlay();
   }
 
@@ -584,6 +614,9 @@ class GameManager {
     this.closeSettingsMenu();
     this.hidePauseOverlay();
     this.gameState = "playing";
+    // TODO: Resume music
+    // Uncomment when music system is ready
+    // this.resumeMusic();
     this.requestPointerLock();
   }
 
@@ -678,7 +711,49 @@ class GameManager {
       return;
     }
 
-    this.tryFireWeapon();
+    // Gestion des actions selon l'item sélectionné
+    if (this.selectedHotbarSlot === 2) {
+      // Slot 2: Bombe (Clic Gauche pour lancer, Clic Droit pour viser)
+      if (mouseButton === LEFT) {
+        if (this.inventory.bomb > 0) this.throwBomb();
+        else this.pushHudToast("Plus de bombes !", [255, 100, 100]);
+      } else if (mouseButton === RIGHT) {
+        this.isBombAiming = true;
+      }
+    } else if (mouseButton === LEFT) {
+      if (this.selectedHotbarSlot === 1) {
+        this.tryFireWeapon();
+      } else if (this.selectedHotbarSlot === 3) {
+        if (this.inventory.pulseCore > 0) {
+          this.activatePulse();
+          this.inventory.pulseCore--;
+          this.pushHudToast("Pulse activé !", [220, 180, 255]);
+        } else {
+          this.pushHudToast("Plus de Pulse !", [220, 180, 255]);
+        }
+      }
+    }
+  }
+
+  throwBomb() {
+    this.isBombAiming = false;
+    if (this.inventory.bomb > 0) {
+      if (typeof window.Bomb === 'function') {
+        const bomb = new window.Bomb(this.player.posX, this.player.posY, this.player.angle);
+        this.bombs.push(bomb);
+        this.inventory.bomb--;
+        this.pushHudToast("Bombe lancée !", [255, 150, 150]);
+      }
+    }
+  }
+
+  handlePrimaryRelease() {
+    if (this.gameState !== "playing") return;
+    
+    // Relâcher le clic droit annule la visée de la bombe
+    if (this.selectedHotbarSlot === 2 && mouseButton === RIGHT) {
+      this.isBombAiming = false;
+    }
   }
 
   handleStartInput() {
@@ -689,9 +764,29 @@ class GameManager {
     return true;
   }
 
+  getSelectedActiveItem() {
+    if (this.selectedHotbarSlot === 1) return { type: 'pistol' };
+    if (this.selectedHotbarSlot === 2) return { type: 'bomb' };
+    if (this.selectedHotbarSlot === 3) return { type: 'pulse' };
+    return null;
+  }
+
   handleHotbarInput(rawKey, rawKeyCode = null) {
     if (this.gameState !== "playing") return false;
     if (this.isSettingsVisible()) return false;
+
+    // Toggle 3D mode with 'O' key
+    if (rawKey === "o" || rawKey === "O" || rawKeyCode === 79) {
+      this.toggle3DMode();
+      return true;
+    }
+
+    // Toggle drastic tracer mode with 'T' key
+    if (rawKey === "t" || rawKey === "T" || rawKeyCode === 84) {
+      this.drasticTracer = !this.drasticTracer;
+      this.pushHudToast(this.drasticTracer ? "TRAINÉE DRASTIQUE: ON" : "TRAINÉE DRASTIQUE: OFF", [255, 255, 100]);
+      return true;
+    }
 
     let slot = 0;
     if (rawKey === "1" || rawKeyCode === 49 || rawKeyCode === 97) slot = 1;
@@ -702,18 +797,6 @@ class GameManager {
 
     this.selectedHotbarSlot = slot;
 
-    if (slot === 1) {
-      this.consumeInventoryItem("ammoPack");
-      return true;
-    }
-    if (slot === 2) {
-      this.consumeInventoryItem("scoreShard");
-      return true;
-    }
-    if (slot === 3) {
-      this.consumeInventoryItem("pulseCore");
-      return true;
-    }
     return false;
   }
 
@@ -726,9 +809,9 @@ class GameManager {
     this.selectedHotbarSlot = ((this.selectedHotbarSlot - 1 + dir + 3) % 3) + 1;
 
     if (this.selectedHotbarSlot === 1) {
-      this.pushHudToast("Slot actif: Ammo", [255, 220, 110]);
+      this.pushHudToast("Slot actif: Pistol", [200, 200, 200]);
     } else if (this.selectedHotbarSlot === 2) {
-      this.pushHudToast("Slot actif: Score", [255, 255, 150]);
+      this.pushHudToast("Slot actif: Bomb", [255, 100, 100]);
     } else {
       this.pushHudToast("Slot actif: Pulse", [220, 180, 255]);
     }
@@ -745,9 +828,11 @@ class GameManager {
   recoverAmmo(amount, toastText = "", colorArray = [255, 220, 110]) {
     if (amount <= 0) return 0;
 
-    const before = this.weaponAmmo;
-    this.weaponAmmo = Math.min(WEAPON_MAX_AMMO, this.weaponAmmo + amount);
-    const gained = this.weaponAmmo - before;
+    const before = this.weaponInventoryAmmo;
+    // Ajout à l'inventaire avec limite dynamique
+    const maxInv = this.getMaxInventoryAmmo();
+    this.weaponInventoryAmmo = Math.min(maxInv, this.weaponInventoryAmmo + amount);
+    const gained = this.weaponInventoryAmmo - before;
 
     if (gained > 0 && toastText) {
       this.pushHudToast(`${toastText} (+${gained})`, colorArray);
@@ -776,10 +861,6 @@ class GameManager {
       this.recoverAmmo(MOB_DROP_AMMO_GAIN);
       this.spawnCollectParticles(this.player.posX, this.player.posY, [255, 220, 110]);
       this.pushHudToast("Ammo pack utilisé", [255, 225, 130]);
-    } else if (itemKey === "scoreShard") {
-      this.score += MOB_DROP_SCORE_GAIN;
-      this.spawnCollectParticles(this.player.posX, this.player.posY, [255, 255, 150]);
-      this.pushHudToast("Score shard utilisé", [255, 255, 170]);
     } else if (itemKey === "pulseCore") {
       const fakeModule = { type: this.randomModuleType(), posX: this.player.posX, posY: this.player.posY };
       this.activateWorldModule(fakeModule);
@@ -916,6 +997,9 @@ class GameManager {
     this.closeSettingsMenu();
     this.hidePauseOverlay();
     
+    this.gold = 0; // Réinitialisation stricte de l'or
+    this.weaponLevel = 1; // Reset du niveau de l'arme
+    this.punchMachinePrice = 2000; // Reset du prix de la machine
     // Load saved settings (sensitivity, volume)
     this.loadSavedSettings();
     
@@ -927,6 +1011,9 @@ class GameManager {
     // Activer 3D si sur localhost, sinon rester en 2D
     this.use3DMode = this.isLocalhostServer;
     console.log("🎮 Game started - 3D Mode:", this.use3DMode, "isLocalhostServer:", this.isLocalhostServer);
+    // TODO: Start gameplay music (works for both 2D and 3D modes)
+    // Uncomment when music system is ready
+    // this.playMusic('gameplay'); // or 'gameplay-2d', 'gameplay-3d' depending on this.use3DMode
     this.player.resetToSpawn();
     this.player.moveSpeed = PLAYER_MOVE_SPEED;
     this.orbs = [];
@@ -934,9 +1021,11 @@ class GameManager {
     this.worldModules = [];
     this.drops = [];
     this.inventory.ammoPack = 0;
-    this.inventory.scoreShard = 0;
+    this.inventory.bomb = 0;
     this.inventory.pulseCore = 0;
     this.selectedHotbarSlot = 1;
+    this.pulseEffectActive = false;
+    this.pulseEffectStart = 0;
     this.hudToastText = "";
     this.hudToastUntilMs = 0;
     this.score = 0;
@@ -945,13 +1034,21 @@ class GameManager {
     this.gameWon = false;
     this.killStreak = 0;
     this.killStreakUntilMs = 0;
-    this.waveNumber = 0;
+    this.interWaveUntilMs = 0;
+    this.waveNumber = 1;
     this.waveState = "preparing";
     this.waveEnemiesTotal = 0;
+
+    // Paramètres de corruption ralentis
+    this.CORRUPTION_TILES_PER_FRAME_LOCAL = 1; 
+    this.CORRUPTION_FRAME_DELAY = 12; // Un bloc toutes les 12 frames (~5 blocs par seconde)
+    this.corruptionFrameCounter = 0;
+    this.CORRUPTION_INTERVAL_SECONDS_LOCAL = 35; // Une nouvelle couche toutes les 35 secondes
     this.waveEnemiesSpawned = 0;
     this.waveEnemiesKilled = 0;
     this.waveKillsRequired = 0;  // Kills needed to complete the wave
     this.waveMaxSimultaneous = 0;
+    this.upcomingSpawns = [];
     this.waveSpawnIntervalMs = 0;
     this.nextWaveActionMs = now + WAVE_START_DELAY_MS;
     this.sprintEnergy = SPRINT_ENERGY_MAX;
@@ -962,9 +1059,11 @@ class GameManager {
     this.powerInstakillUntilMs = 0;
     this.punchMachineInteractLatch = false;
     this.punchMachine = null;
-    this.weaponAmmo = WEAPON_START_AMMO;
+    this.weaponMagazineAmmo = WEAPON_START_MAGAZINE;
+    this.weaponInventoryAmmo = WEAPON_START_INVENTORY;
     this.weaponLastShotMs = 0;
     this.weaponFlashUntilMs = 0;
+    this.weaponReloadingUntilMs = 0;
     this.corruptionLayer = 0;
     this.pendingCorruptionTiles = [];
     this.lastCorruptionTime = 0;
@@ -1016,6 +1115,14 @@ class GameManager {
     this.hidePauseOverlay();
     this.closeSettingsMenu();
 
+    // TODO: Stop gameplay music and play end-game music
+    // Uncomment when music system is ready
+    // if (isVictory) {
+    //   this.playMusic('victory');
+    // } else {
+    //   this.playMusic('game-over');
+    // }
+
     // Release pointer lock
     if (document.exitPointerLock) document.exitPointerLock();
 
@@ -1050,6 +1157,17 @@ class GameManager {
   }
 
   /**
+   * Toggle the 3D bullet tracer visibility
+   */
+  toggleTracer3D() {
+    this.tracer3DEnabled = !this.tracer3DEnabled;
+    this.pushHudToast(
+      this.tracer3DEnabled ? "Trainée 3D: ON" : "Trainée 3D: OFF",
+      this.tracer3DEnabled ? [180,255,180] : [255,180,180]
+    );
+  }
+
+  /**
    * Get current render mode status
    */
   getRenderModeStatus() {
@@ -1062,7 +1180,8 @@ class GameManager {
   runFrame() {
     const dt = min(deltaTime / 1000, 0.05);
 
-    if (this.gameState === "playing") {
+    // La simulation continue en mode jeu, entre-vague ou préparation
+    if (this.gameState === "playing" || this.gameState === "inter-wave" || this.gameState === "preparing") {
       this.updateGame(dt);
     }
 
@@ -1093,6 +1212,8 @@ class GameManager {
     if (this.gameState !== "playing") return;
     this.updateKillStreakState();
     this.score += SURVIVAL_POINTS_PER_SECOND * dt;
+    // Bombes
+    this.updateBombs(dt);
   }
 
   updateSprintState(dt) {
@@ -1150,10 +1271,24 @@ class GameManager {
 
   currentWeaponDamage() {
     if (this.isInstakillActive()) return 999;
+    // Base 20, +20 par niveau d'amélioration. 
+    let damage = 20 + (this.weaponLevel - 1) * 20;
     if (this.isDamageBoostActive()) {
-      return WEAPON_BASE_DAMAGE * POWERUP_DAMAGE_MULTIPLIER;
+      damage *= POWERUP_DAMAGE_MULTIPLIER;
     }
-    return WEAPON_BASE_DAMAGE;
+    return damage;
+  }
+
+  getMaxMagazineSize() {
+    // Chargeur de base 12, +3 balles par niveau d'amélioration
+    const baseCap = typeof WEAPON_MAGAZINE_SIZE !== 'undefined' ? WEAPON_MAGAZINE_SIZE : 12;
+    return baseCap + (this.weaponLevel - 1) * 3;
+  }
+
+  getMaxInventoryAmmo() {
+    // Capacité d'inventaire de base (ex: 36), +12 balles par niveau d'amélioration
+    const baseInv = typeof WEAPON_INVENTORY_AMMO_MAX !== 'undefined' ? WEAPON_INVENTORY_AMMO_MAX : 36;
+    return baseInv + (this.weaponLevel - 1) * 12;
   }
 
   currentFireCooldownMs() {
@@ -1198,20 +1333,36 @@ class GameManager {
   updateWaveSystem() {
     const now = millis();
 
-    if (this.waveState === "preparing") {
-      const timeUntilNext = this.nextWaveActionMs - now;
-      if (timeUntilNext <= 100 && timeUntilNext > 0) {
-        console.log(`⏳ Wave ${this.waveNumber} buffer: ${timeUntilNext.toFixed(0)}ms until next wave`);
+    // Si le jeu est en état "inter-wave", le système de vagues est en pause.
+    // La transition vers la prochaine vague est gérée par renderFrame()
+    if (this.gameState === "inter-wave") {
+      return;
+    }
+
+    if (this.waveState === "preparing") { // Cet état est atteint après le délai d'inter-vague
+      if (now >= this.nextWaveActionMs) { // Attendre le petit délai de préparation
+        console.log(`🚀 Transitioning from preparing → spawning for Wave ${this.waveNumber}`);
+        this.startNextWave(); // Lance la vague
       }
-      if (now >= this.nextWaveActionMs) {
-        console.log(`🚀 Transitioning from preparing → spawning for Wave ${this.waveNumber + 1}`);
-        this.startNextWave();
+      // Clear upcoming spawns if we transition out of preparing (e.g., game over)
+      if (this.gameState !== "preparing") {
+        this.upcomingSpawns = [];
       }
       return;
     }
 
     if (this.waveState !== "spawning" && this.waveState !== "in-progress") return;
 
+    // Process upcoming spawns
+    for (let i = this.upcomingSpawns.length - 1; i >= 0; i--) {
+      const spawn = this.upcomingSpawns[i];
+      if (now >= spawn.actualSpawnTime) {
+        this.spawnHunterAt(spawn.x, spawn.y, spawn.speed, spawn.health);
+        this.upcomingSpawns.splice(i, 1);
+      }
+    }
+
+    // Schedule new spawns if conditions met
     let aliveHunters = this.countAliveHunters();
     while (
       this.waveState === "spawning" &&
@@ -1234,48 +1385,54 @@ class GameManager {
       this.waveState = "in-progress";
     }
 
-    const aliveAfter = this.countAliveHunters();
-    // Only check wave completion if wave has actually started (waveNumber > 0)
+    // On vérifie la fin de vague si tous les ennemis prévus sont apparus et éliminés
     if (
-      this.waveNumber > 0 &&
       this.waveEnemiesSpawned >= this.waveEnemiesTotal &&
-      this.waveEnemiesKilled >= this.waveKillsRequired
-    ) {
+      this.waveEnemiesKilled >= this.waveKillsRequired &&
+      this.upcomingSpawns.length === 0
+    ) { 
       this.completeCurrentWave();
     }
   }
 
   startNextWave() {
-    this.waveNumber += 1;
+    if (this.waveNumber === 0) this.waveNumber = 1; 
     
     // Update map size based on wave difficulty
-    this.updateMapSizeForWave();
+    // this.updateMapSizeForWave(); // Déjà mis à jour dans completeCurrentWave
     
     // RESET corruption (lava) at each wave start
     this.corruptionLayer = 0;
     this.pendingCorruptionTiles = [];
     this.lastCorruptionTime = 0;
     
-    // Calculate zombie count with reduced difficulty for early waves
-    let baseCount = WAVE_BASE_ENEMY_COUNT;
-    if (this.waveNumber === 1) baseCount = 3;  // Wave 1: 3 zombies to match 3 kills required
-    else if (this.waveNumber === 2) baseCount = 6;  // Wave 2: 6 zombies to match 6 kills required
-    else baseCount = WAVE_BASE_ENEMY_COUNT;  // Wave 3+: normal
+    // NETTOYAGE DE LA LAVE DU NIVEAU PRÉCÉDENT
+    if (typeof worldTileMap !== 'undefined') {
+      for (let r = 0; r < worldTileMap.length; r++) {
+        for (let c = 0; c < worldTileMap[r].length; c++) {
+          if (worldTileMap[r][c] === 6) worldTileMap[r][c] = 0;
+        }
+      }
+    }
     
+    // Croissance limitée : +5 zombies toutes les 3 vagues (~1.66 par vague)
+    let baseCount = 5; 
     this.waveEnemiesTotal =
-      baseCount +
-      Math.max(0, this.waveNumber - 3) * WAVE_ENEMY_GROWTH_LINEAR +
-      Math.floor(Math.pow(Math.max(0, this.waveNumber - 2), 1.2));
+      baseCount + Math.floor((this.waveNumber - 1) * 1.66);
     
     this.waveEnemiesSpawned = 0;
     this.waveEnemiesKilled = 0;
     
+    // Reset upcoming spawns for the new wave
+    this.upcomingSpawns = [];
+
     // Calculate kills required to end the wave
-    this.waveKillsRequired = this.calculateKillsRequiredForWave();
+    this.waveKillsRequired = this.waveEnemiesTotal;
     
     this.waveMaxSimultaneous = Math.min(
       WAVE_MAX_SIMULTANEOUS_CAP,
-      WAVE_MAX_SIMULTANEOUS_BASE + Math.floor(Math.max(0, this.waveNumber - 2) * WAVE_MAX_SIMULTANEOUS_GROWTH)
+      WAVE_MAX_SIMULTANEOUS_BASE + Math.floor(Math.max(0, this.waveNumber - 1) * WAVE_MAX_SIMULTANEOUS_GROWTH) // Base + 1 per wave
+
     );
     this.waveSpawnIntervalMs = Math.max(
       WAVE_SPAWN_INTERVAL_MIN_MS,
@@ -1283,6 +1440,13 @@ class GameManager {
     );
 
     this.waveState = "spawning";
+    this.gameState = "playing"; // On repasse en mode jeu pour réactiver le tir
+
+    // Augmenter la vitesse de spawn toutes les 4 vagues après la vague 4
+    if (this.waveNumber > 4 && (this.waveNumber - 4) % 4 === 0) {
+      this.waveSpawnIntervalMs += 200; // Ajoute 200ms à l'intervalle
+      this.pushHudToast(`Spawn ralentis ! (+200ms)`, [255, 200, 100]);
+    }
     this.nextWaveActionMs = millis() + 500;
     this.pushHudToast(`VAGUE ${this.waveNumber} - Tuez ${this.waveKillsRequired} zombies`, [255, 145, 110]);
     this.addScreenShake(2.6, 180);
@@ -1291,7 +1455,7 @@ class GameManager {
   updateMapSizeForWave() {
     // Scale map size: progressively increase by 2 tiles per wave
     // Wave 1: 40x40 (initial), Wave 2: 42x42, Wave 3: 44x44, ... (infinite)
-    let newMapSize = 40 + (this.waveNumber - 1) * 2;
+    let newMapSize = 40 + (this.waveNumber - 1) * 1;
     
     // Skip on wave 1 - map already generated at game start
     if (this.waveNumber === 1) return;
@@ -1333,30 +1497,38 @@ class GameManager {
     return Math.floor(DIFFICULTY_WAVE_3_KILLS * Math.pow(DIFFICULTY_SCALE_KILLS, this.waveNumber - 3));
   }
 
-  completeCurrentWave() {
-    // Apply difficulty multiplier to rewards
-    let pointMultiplier = 1.0;
-    if (this.waveNumber === 1) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_1;
-    else if (this.waveNumber === 2) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_2;
-    else if (this.waveNumber === 3) pointMultiplier = DIFFICULTY_POINTS_MULTIPLIER_WAVE_3;
-    // Wave 4+ gets full points
-    
-    const rewardScore = Math.floor(
-      (WAVE_CLEAR_REWARD_SCORE + this.waveNumber * WAVE_CLEAR_REWARD_SCORE_PER_WAVE) * pointMultiplier
-    );
-    this.score += rewardScore;
+  /**
+   * Returns a difficulty multiplier based on the current wave number.
+   */
+  getWaveDifficultyMultiplier() {
+    return 1.0 + (this.waveNumber - 1) * 0.05;
+  }
 
-    const rewardAmmo = WAVE_CLEAR_REWARD_AMMO + Math.floor(this.waveNumber / 4);
-    this.recoverAmmo(rewardAmmo, "Prime de vague", [255, 220, 120]);
+  completeCurrentWave() {
+    // Transition to inter-wave screen
+    this.gameState = "inter-wave";
+    this.interWaveUntilMs = millis() + 2000; // Délai de 2 secondes demandé
+
+    // Calculate rewards (moved here to be given immediately upon wave completion)
+    const baseRewardScore = WAVE_CLEAR_REWARD_SCORE + this.waveNumber * WAVE_CLEAR_REWARD_SCORE_PER_WAVE;
+    const difficultyMultiplier = this.getWaveDifficultyMultiplier();
+    const rewardScore = Math.floor(baseRewardScore * difficultyMultiplier);
+    this.score += rewardScore; // Give score immediately
+
+    const rewardAmmo = WAVE_CLEAR_REWARD_AMMO + Math.floor(this.waveNumber / 3);
+    this.recoverAmmo(rewardAmmo, "Prime de vague", [255, 220, 120]); // Give ammo immediately
+
+    this.pushHudToast(`Vague ${this.waveNumber} complétée! ${rewardScore} points`, [145, 230, 255]);
 
     if (this.waveNumber % 3 === 0) {
       this.spawnWorldModule();
     }
     
-    // Directly transition to next wave (no portal)
-    this.waveState = "preparing";
-    this.nextWaveActionMs = millis() + 1800;  // 1.8 second break before next wave
-    this.pushHudToast(`Vague ${this.waveNumber} complétée! ${rewardScore} points - Prochaine vague en cours...`, [145, 230, 255]);
+    // Passage technique au niveau suivant (pendant que l'écran s'affiche)
+    this.waveNumber += 1;
+    this.updateMapSizeForWave();
+
+    this.waveState = "completed"; // Marque la vague comme terminée, en attente de la prochaine
     this.addScreenShake(2.0, 140);
   }
 
@@ -1369,16 +1541,34 @@ class GameManager {
   }
 
   waveHunterHealth() {
-    return 1 + Math.floor(Math.max(0, this.waveNumber - 1) / WAVE_HEALTH_STEP_WAVES);
+    // Base 10. Progression de +10 par vague.
+    // V1: 10, V5: 50, V10: 100.
+    // Combiné aux dégâts (20), cela donne 1 shot au début, 3 shots V5, etc.
+    return 10 + (this.waveNumber - 1) * 10;
   }
 
   spawnWaveHunter() {
+    // Limit the number of orbs on the map
+    const maxOrbs = this.maxOrbsOnMap || 50;
+    if (this.orbs.length >= maxOrbs) {
+      return false; // Cannot spawn more if limit reached
+    }
+
     const pos = this.findWaveSpawnSpot();
     if (!pos) return false;
 
     const speed = ENEMY_BASE_SPEED + this.waveNumber * WAVE_ENEMY_SPEED_PER_WAVE + random(0, 0.28);
     const health = this.waveHunterHealth();
-    this.spawnHunterAt(pos.x, pos.y, speed, health);
+
+    // Ajout à la liste des spawns à venir pour afficher l'indicateur orange
+    this.upcomingSpawns.push({
+      x: pos.x,
+      y: pos.y,
+      speed: speed,
+      health: health,
+      actualSpawnTime: millis() + this.SPAWN_INDICATOR_DURATION_MS
+    });
+
     return true;
   }
 
@@ -1388,16 +1578,16 @@ class GameManager {
     hunter.radius = ENEMY_WORLD_RADIUS;
     hunter.birthMs = millis() - MAX_MUTATION_DELAY_MS;
     hunter.warningStartMs = 0;
-    hunter.health = Math.max(1, Math.floor(health));
+    hunter.health = Math.max(1, Math.floor(health)); // Ensure at least 1 HP
     hunter.maxHealth = hunter.health;
     hunter.spawnSource = "wave";
-    hunter.noLoseAggro = true;
+    hunter.noLoseAggro = true; // Zombies always chase once spawned
     this.orbs.push(hunter);
   }
 
   findWaveSpawnSpot() {
-    // Pure random spawn anywhere on map, with 5.0 tile minimum distance from player
-    const MIN_DISTANCE_FROM_PLAYER = 5.0;
+    // Pure random spawn anywhere on map, with 10.0 tile minimum distance from player
+    const MIN_DISTANCE_FROM_PLAYER = 10.0;
     const MAX_ATTEMPTS = 200;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -1432,15 +1622,10 @@ class GameManager {
 
   // --- Punch Machine ---
   spawnPunchMachine() {
-    const fallback = {
-      x: MAP_TILE_COUNT / 2 + 2.5,
-      y: MAP_TILE_COUNT / 2 + 0.5,
-    };
-    const pos = this.findFreeWorldSpot(2.6) || fallback;
-
+    const dist = 2.0; // Apparaît à 2 blocs devant le joueur
     this.punchMachine = {
-      posX: constrain(pos.x, 1.5, MAP_TILE_COUNT - 1.5),
-      posY: constrain(pos.y, 1.5, MAP_TILE_COUNT - 1.5),
+      posX: constrain(this.player.posX + Math.cos(this.player.angle) * dist, 1.5, MAP_TILE_COUNT - 1.5),
+      posY: constrain(this.player.posY + Math.sin(this.player.angle) * dist, 1.5, MAP_TILE_COUNT - 1.5),
       radius: PUNCH_MACHINE_RADIUS,
       lastUseMs: -PUNCH_MACHINE_COOLDOWN_MS,
     };
@@ -1449,10 +1634,11 @@ class GameManager {
   updatePunchMachineInteraction() {
     if (!this.punchMachine) return;
 
-    const interactPressed = pressedKeyCodes.has("KeyF");
+    // Utilise uniquement KeyA pour l'interaction
+    const interactPressed = pressedKeyCodes.has("KeyQ");
     if (!interactPressed) {
       this.punchMachineInteractLatch = false;
-      return;
+      return; // Only check for 'A' key
     }
 
     if (this.punchMachineInteractLatch) return;
@@ -1462,8 +1648,11 @@ class GameManager {
       this.player.posX - this.punchMachine.posX,
       this.player.posY - this.punchMachine.posY
     );
-    const interactRange = this.player.radius + this.punchMachine.radius + 0.34;
-    if (dist > interactRange) return;
+    
+    // On utilise une portée cohérente avec l'affichage (2.2 unités)
+    if (dist > 2.2) {
+      return;
+    }
 
     this.activatePunchMachine();
   }
@@ -1473,12 +1662,12 @@ class GameManager {
 
     const now = millis();
     if (this.waveNumber < PUNCH_MACHINE_UNLOCK_WAVE) {
-      this.pushHudToast(`Punch Machine verrouillée (vague ${PUNCH_MACHINE_UNLOCK_WAVE})`, [255, 160, 160]);
+      this.pushHudToast(`ACCES REFUSE : VAGUE ${PUNCH_MACHINE_UNLOCK_WAVE} REQUISE`, [255, 100, 100]);
       return;
     }
 
-    if (this.score < PUNCH_MACHINE_COST) {
-      this.pushHudToast(`Points insuffisants (${PUNCH_MACHINE_COST})`, [255, 165, 165]);
+    if (this.gold < this.punchMachinePrice) {
+      this.pushHudToast(`OR INSUFFISANT ! (${this.punchMachinePrice} G)`, [255, 100, 100]);
       return;
     }
 
@@ -1489,9 +1678,19 @@ class GameManager {
       return;
     }
 
-    this.score -= PUNCH_MACHINE_COST;
+    this.gold -= this.punchMachinePrice;
     this.punchMachine.lastUseMs = now;
-    this.applyRandomPunchPowerup();
+    
+    // Amélioration effective
+    this.weaponLevel++;
+    // Augmentation du prix pour la prochaine fois
+    this.punchMachinePrice += 2500;
+    
+    // RECHARGE AUTOMATIQUE lors de l'amélioration (standard Zombie)
+    this.weaponMagazineAmmo = this.getMaxMagazineSize();
+    this.weaponInventoryAmmo = this.getMaxInventoryAmmo();
+    
+    this.pushHudToast(`ARME AMÉLIORÉE (NIV. ${this.weaponLevel}) + MUNITIONS MAX !`, [100, 255, 100]);
     this.addScreenShake(3.5, 220);
     this.spawnCollectParticles(this.punchMachine.posX, this.punchMachine.posY, [235, 130, 255]);
   }
@@ -1501,7 +1700,7 @@ class GameManager {
     const roll = Math.random();
 
     if (roll < 0.2) {
-      this.recoverAmmo(WEAPON_MAX_AMMO, "PUNCH: MAX AMMO", [255, 220, 140]);
+      this.recoverAmmo(this.getMaxInventoryAmmo(), "PUNCH: MAX AMMO", [255, 220, 140]);
       return;
     }
 
@@ -1586,7 +1785,14 @@ class GameManager {
   }
 
   isWalkableTile(row, col) {
-    if (row <= 0 || row >= this.mapHeight - 1 || col <= 0 || col >= this.mapWidth - 1) {
+    // Convertir en entiers si possible
+    row = Math.floor(Number(row));
+    col = Math.floor(Number(col));
+    if (
+      isNaN(row) || isNaN(col) ||
+      row <= 0 || row >= this.mapHeight - 1 ||
+      col <= 0 || col >= this.mapWidth - 1
+    ) {
       return false;
     }
     return worldTileMap[row][col] === 0;
@@ -1878,23 +2084,81 @@ class GameManager {
   // --- Weapon combat ---
   tryFireWeapon() {
     const now = millis();
+    
+    // Block firing while reloading
+    if (now < this.weaponReloadingUntilMs) return;
+    
     const shotCooldown = this.currentFireCooldownMs();
     if (now - this.weaponLastShotMs < shotCooldown) return;
 
     this.weaponLastShotMs = now;
 
-    if (this.weaponAmmo <= 0) {
+    // No ammo in magazine
+    if (this.weaponMagazineAmmo <= 0) {
+      this.pushHudToast("RECHARGER!", [255, 100, 100]);
       return;
     }
 
-    this.weaponAmmo--;
+    this.weaponMagazineAmmo--;
     this.weaponFlashUntilMs = now + 70;
     this.addScreenShake(1.2, 70);
 
-    const hit = this.findBestHunterTarget();
-    if (!hit) return;
+    // --- Bullet tracer logic ---
+    // Calculate shot direction (player angle)
+    const angle = this.player.angle;
+    const muzzleDist = 0.7; // Distance from player center to muzzle
+    const x0 = this.player.posX + Math.cos(angle) * muzzleDist;
+    const y0 = this.player.posY + Math.sin(angle) * muzzleDist;
+    let x1 = x0 + Math.cos(angle) * 12.0; // Max tracer length (far)
+    let y1 = y0 + Math.sin(angle) * 12.0;
 
-    this.applyHunterDamage(hit.orb, this.currentWeaponDamage());
+    const hit = this.findBestHunterTarget();
+    if (hit && hit.orb) {
+      // If hit, set tracer end to zombie position
+      x1 = hit.orb.posX;
+      y1 = hit.orb.posY;
+    }
+
+    // Add tracer (visible for 120ms)
+    this.bulletTracers.push({ x0, y0, x1, y1, createdMs: now, durationMs: 620 });
+
+    if (hit && hit.orb) {
+      this.applyHunterDamage(hit.orb, this.currentWeaponDamage());
+    }
+  }
+
+  reloadWeapon() {
+    const now = millis();
+    
+    // Already reloading
+    if (now < this.weaponReloadingUntilMs) return;
+    
+    const maxMag = this.getMaxMagazineSize();
+    // Magazine already full
+    if (this.weaponMagazineAmmo >= maxMag) {
+      this.pushHudToast("Chargeur plein", [150, 150, 150]);
+      return;
+    }
+    
+    // No ammo in inventory
+    if (this.weaponInventoryAmmo <= 0) {
+      this.pushHudToast("Pas de balles!", [255, 100, 100]);
+      return;
+    }
+    
+    // Utilisation de la capacité dynamique
+    const bulletsNeeded = maxMag - this.weaponMagazineAmmo;
+    const bulletsTaken = Math.min(bulletsNeeded, this.weaponInventoryAmmo);
+    
+    // Take from inventory and add to magazine
+    this.weaponInventoryAmmo -= bulletsTaken;
+    this.weaponMagazineAmmo += bulletsTaken;
+    
+    // Start reload animation (1 second)
+    this.weaponReloadingUntilMs = now + WEAPON_RELOAD_DURATION_MS;
+    
+    console.log(`🔫 Reloading: +${bulletsTaken} bullets (${this.weaponMagazineAmmo}/${maxMag})`);
+    this.pushHudToast(`Rechargement +${bulletsTaken}`, [100, 200, 255]);
   }
 
   findBestHunterTarget() {
@@ -1965,6 +2229,10 @@ class GameManager {
 
     orb.health -= Math.max(1, damage);
     if (orb.health > 0) {
+      // Particules de sang lors de l'impact
+      for (let i = 0; i < 4; i++) {
+        this.particles.push(new Particle(orb.posX, orb.posY, [255, 50, 50]));
+      }
       this.addScreenShake(0.7, 60);
       return;
     }
@@ -1977,9 +2245,12 @@ class GameManager {
     if (index < 0) return;
 
     this.registerHunterKillStreak();
+    const multiplier = this.currentKillStreakMultiplier();
+    
     if (orb.spawnSource === "wave") {
       this.waveEnemiesKilled += 1;
     }
+    this.gold += Math.floor(150 * multiplier); // L'or est maintenant multiplié par le combo
     this.recoverAmmo(HUNTER_KILL_AMMO_REFUND);
     this.spawnCollectParticles(orb.posX, orb.posY, [255, 80, 80]);
     this.orbStunUntilMap.delete(orb);
@@ -2047,13 +2318,15 @@ class GameManager {
         } else {
           this.pushHudToast("Inventaire ammo plein", [255, 160, 160]);
         }
+        // Récupération directe des munitions pour le pistolet
+        this.recoverAmmo(MOB_DROP_ROUNDS_GAIN, "Munitions (+10)", [255, 220, 110]);
         this.spawnCollectParticles(drop.posX, drop.posY, [255, 215, 120]);
       } else if (drop.type === "score") {
-        const added = this.addInventoryItem("scoreShard", 1);
+        const added = this.addInventoryItem("bomb", 1);
         if (added > 0) {
-          this.pushHudToast("+1 Score shard", [255, 255, 150]);
+          this.pushHudToast("+1 Bomb", [255, 150, 150]);
         } else {
-          this.pushHudToast("Inventaire score plein", [255, 160, 160]);
+          this.pushHudToast("Inventaire bombes plein", [255, 160, 160]);
         }
         this.spawnCollectParticles(drop.posX, drop.posY, [255, 255, 140]);
       } else if (drop.type === "pulse") {
@@ -2072,15 +2345,17 @@ class GameManager {
         this.spawnCollectParticles(drop.posX, drop.posY, [255, 205, 130]);
       } else if (drop.type === "crate") {
         const ammoPackAdded = this.addInventoryItem("ammoPack", 1);
-        const scoreShardAdded = this.addInventoryItem("scoreShard", 1);
+        const bombAdded = this.addInventoryItem("bomb", 1);
         const directAmmo = this.recoverAmmo(MOB_DROP_CRATE_BONUS_AMMO);
 
-        if (ammoPackAdded > 0 || scoreShardAdded > 0 || directAmmo > 0) {
-          this.pushHudToast("Caisse tactique récupérée", [170, 225, 255]);
-        } else {
-          this.pushHudToast("Caisse inutile (inventaire plein)", [255, 170, 170]);
+        if (ammoPackAdded > 0 || bombAdded > 0 || directAmmo > 0) {
+          if (bombAdded > 0 || directAmmo > 0) {
+            this.pushHudToast("Caisse tactique récupérée", [170, 225, 255]);
+          } else {
+            this.pushHudToast("Caisse inutile (inventaire plein)", [255, 170, 170]);
+          }
+          this.spawnCollectParticles(drop.posX, drop.posY, [165, 225, 255]);
         }
-        this.spawnCollectParticles(drop.posX, drop.posY, [165, 225, 255]);
       }
 
       this.drops.splice(i, 1);
@@ -2098,7 +2373,7 @@ class GameManager {
     // Calculate corruption start delay based on wave difficulty
     let corruptionStartDelay = CORRUPTION_START_DELAY_SECONDS;
     if (this.waveNumber === 1) {
-      corruptionStartDelay = DIFFICULTY_CORRUPTION_DELAY_MS_WAVE_1 / 1000;
+      corruptionStartDelay = 5; // La lave commence après seulement 5s en vague 1
     }
     
     if (elapsed < corruptionStartDelay) return;
@@ -2110,13 +2385,13 @@ class GameManager {
     }
 
     // Calculate corruption interval based on wave (slower for early waves)
-    let corruptionInterval = CORRUPTION_INTERVAL_SECONDS;
+    let corruptionInterval = this.CORRUPTION_INTERVAL_SECONDS_LOCAL;
     if (this.waveNumber === 1) {
-      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE;
+      corruptionInterval = this.CORRUPTION_INTERVAL_SECONDS_LOCAL * 1.5; // Slower for wave 1
     } else if (this.waveNumber === 2) {
-      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE * 0.9;
+      corruptionInterval = this.CORRUPTION_INTERVAL_SECONDS_LOCAL * 1.2; // Slightly slower for wave 2
     } else if (this.waveNumber === 3) {
-      corruptionInterval = DIFFICULTY_CORRUPTION_INTERVAL_BASE * 0.85;
+      corruptionInterval = this.CORRUPTION_INTERVAL_SECONDS_LOCAL * 1.1; // Slightly slower for wave 3
     }
     // From wave 4+: use normal speed
 
@@ -2141,47 +2416,34 @@ class GameManager {
     }
 
     const queued = [];
-    const seen = new Set();
-    const enqueue = (row, col) => {
-      const key = `${row}:${col}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      queued.push({ row, col });
-    };
+    // Tracé séquentiel du contour : Haut -> Droite -> Bas -> Gauche
+    for (let col = lo; col <= hi; col++) queued.push({ row: lo, col }); // Top
+    for (let row = lo + 1; row <= hi; row++) queued.push({ row, col: hi }); // Right
+    for (let col = hi - 1; col >= lo; col--) queued.push({ row: hi, col }); // Bottom
+    for (let row = hi - 1; row >= lo + 1; row--) queued.push({ row, col: lo }); // Left
 
-    for (let col = lo; col <= hi; col++) {
-      enqueue(lo, col);
-      enqueue(hi, col);
-    }
-    for (let row = lo; row <= hi; row++) {
-      enqueue(row, lo);
-      enqueue(row, hi);
-    }
-
-    // Shuffle for an organic spread instead of strict geometric pop-in.
-    for (let i = queued.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const tmp = queued[i];
-      queued[i] = queued[j];
-      queued[j] = tmp;
-    }
-
-    this.pendingCorruptionTiles.push(...queued);
+    // On inverse car on utilise pop() (LIFO), ainsi le tracé commence bien par le premier élément ajouté
+    this.pendingCorruptionTiles.push(...queued.reverse());
   }
 
   applyPendingCorruptionStep() {
     if (this.pendingCorruptionTiles.length === 0) return;
 
-    const count = Math.min(CORRUPTION_TILES_PER_FRAME, this.pendingCorruptionTiles.length);
+    this.corruptionFrameCounter++;
+    if (this.corruptionFrameCounter < this.CORRUPTION_FRAME_DELAY) return;
+    this.corruptionFrameCounter = 0;
+
+    const count = Math.min(this.CORRUPTION_TILES_PER_FRAME_LOCAL, this.pendingCorruptionTiles.length);
     for (let i = 0; i < count; i++) {
       const tile = this.pendingCorruptionTiles.pop();
       if (!tile) break;
 
       const row = tile.row;
       const col = tile.col;
-      if (row <= 0 || row >= MAP_TILE_COUNT - 1 || col <= 0 || col >= MAP_TILE_COUNT - 1) continue;
-      if (worldTileMap[row][col] === 0) {
-        worldTileMap[row][col] = 6;
+        const currentRow = worldTileMap[row];
+        if (currentRow[col] === 0) {
+          currentRow[col] = 6;
+        }
       }
     }
   }
@@ -2194,11 +2456,19 @@ class GameManager {
       const isStunned = this.isOrbStunned(orb, now);
 
       if (!isStunned) {
-        const scaledDt = (this.isChronoActive() && orb.isHunter())
+        let scaledDt = (this.isChronoActive() && orb.isHunter())
           ? dt * MODULE_CHRONO_HUNTER_TIME_SCALE
           : dt;
 
+        // Ralentissement proportionnel à la santé pour les zombies
+        if (orb.isHunter()) {
+          const healthFactor = 0.4 + (orb.health / orb.maxHealth) * 0.6; // Min 40% de vitesse
+          scaledDt *= healthFactor;
+        }
+
         orb.update(scaledDt, this.player, this.use3DMode);
+        
+        // Progression de l'animation de spawn
       }
 
       if (orb.isHunter()) {
@@ -2249,6 +2519,19 @@ class GameManager {
       }
     }
 
+    // Collision joueur vs Punch Machine
+    if (this.punchMachine) {
+      const dx = this.player.posX - this.punchMachine.posX;
+      const dy = this.player.posY - this.punchMachine.posY;
+      const dist = Math.hypot(dx, dy);
+      const minDistance = this.player.radius + this.punchMachine.radius;
+      if (dist < minDistance) {
+        const overlap = minDistance - dist;
+        this.player.posX += (dx / dist) * overlap;
+        this.player.posY += (dy / dist) * overlap;
+      }
+    }
+
     // Player vs orbs
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const orb = this.orbs[i];
@@ -2261,6 +2544,7 @@ class GameManager {
         if (orb.isSafe()) {
           // Normal collect
           this.score += ORB_COLLECT_BONUS;
+          this.gold += 50;
           this.recoverAmmo(ORB_SAFE_AMMO_RECOVERY);
           this.spawnCollectParticles(orb.posX, orb.posY, [92, 255, 145]);
           this.orbStunUntilMap.delete(orb);
@@ -2268,6 +2552,7 @@ class GameManager {
         } else if (orb.isWarning()) {
           // Risky grab during warning phase — double bonus!
           this.score += ORB_COLLECT_BONUS * 2;
+          this.gold += 120;
           this.recoverAmmo(ORB_WARNING_AMMO_RECOVERY, "Orb instable converti", [255, 210, 120]);
           this.spawnCollectParticles(orb.posX, orb.posY, [255, 200, 60]);
           this.orbStunUntilMap.delete(orb);
@@ -2408,8 +2693,17 @@ class GameManager {
       DISPATCHER: Delegates to active rendering mode
       Mode separation allows independent testing/debugging
     */
+    if (this.gameState === "inter-wave") {
+      if (millis() >= this.interWaveUntilMs) {
+        this.startNextWave(); // Lance directement la prochaine vague après le délai
+      }
+      const mode = this.use3DMode ? this.gameMode3D : this.gameMode2D;
+      mode.render(); // On rend le monde en arrière-plan pour que la caméra s'actualise
+      mode.drawInterWaveScreen();
+      return;
+    }
+
     const mode = this.use3DMode ? this.gameMode3D : this.gameMode2D;
-    
     if (this.use3DMode) {
       // 3D mode: Direct render to WEBGL
       try {
@@ -2467,38 +2761,13 @@ class GameManager {
     
     g.push();
     g.noStroke();
-    
-    const floorSize = MAP_TILE_COUNT;
-    const blockSize = 1.0;  // Size of one block
-    const floorRenderDist = 20;  // Render floor blocks within this distance
-    
-    // Apply floor as a grid of colored blocks - with culling
-    // Use procedural checkerboard pattern
-    const floorColor1 = [118, 140, 78];  // Green
-    const floorColor2 = [140, 115, 78];  // Tan
-    
-    // Only render floor blocks near the player
-    const minX = Math.max(0, Math.floor(this.player.posX - floorRenderDist));
-    const maxX = Math.min(floorSize, Math.ceil(this.player.posX + floorRenderDist));
-    const minZ = Math.max(0, Math.floor(this.player.posY - floorRenderDist));
-    const maxZ = Math.min(floorSize, Math.ceil(this.player.posY + floorRenderDist));
-    
-    for (let x = minX; x < maxX; x += blockSize) {
-      for (let z = minZ; z < maxZ; z += blockSize) {
-        // Checkerboard pattern: alternate colors based on block position
-        const blockX = Math.floor(x);
-        const blockZ = Math.floor(z);
-        const isEven = (blockX + blockZ) % 2 === 0;
-        const color = isEven ? floorColor1 : floorColor2;
-        
-        g.fill(color[0], color[1], color[2]);
-        g.push();
-        g.translate(x + blockSize/2, -0.5, z + blockSize/2);
-        g.box(blockSize, 0.05, blockSize);
-        g.pop();
-      }
-    }
-    
+
+    // OPTIMISATION CRITIQUE : Un seul plan pour le sol au lieu de milliers de box()
+    const d = 15;
+    g.translate(this.player.posX, -0.5, this.player.posY);
+    g.rotateX(Math.PI / 2);
+    g.fill(118, 140, 78);
+    g.plane(d * 3, d * 3);
     g.pop();
     
     // Draw all map tiles
@@ -2688,7 +2957,7 @@ class GameManager {
   drawMapBlocks3D(g) {
     // Iterate over visible map tiles only (frustum culling)
     // ULTRA aggressive culling for maximum performance
-    const renderDist = 8;  // Reduced from 12 to ~200 blocks instead of 576
+    const renderDist = 16;  // Slightly increased for better visibility
     const minX = Math.max(0, Math.floor(this.player.posX - renderDist));
     const maxX = Math.min(MAP_TILE_COUNT, Math.ceil(this.player.posX + renderDist));
     const minY = Math.max(0, Math.floor(this.player.posY - renderDist));
@@ -2722,9 +2991,13 @@ class GameManager {
     // Overall height ~1.5 units
     g.fill(80, 150, 60);  // Zombie green
     
+    const spawnScale = orb.spawnAnim !== undefined ? orb.spawnAnim : 1.0;
+    g.scale(spawnScale);
+    const verticalOffset = (1.0 - spawnScale) * 0.5;
+    
     // Simple capsule-like body
     g.push();
-    g.translate(0, 0, 0);
+    g.translate(0, verticalOffset, 0);
     drawSharpBox(g, 0.4, 1.0, 0.25);  // Main body
     g.pop();
     
@@ -3015,8 +3288,8 @@ class GameManager {
     let fogFactor;
     if (FOG_3D_ENABLED) {
       // Exponential fog: exp(-density * (distance - startDist)^2)
-      const distFromFogStart = Math.max(0, distance - FOG_3D_START_DISTANCE);
-      fogFactor = Math.exp(-FOG_3D_DENSITY * distFromFogStart * distFromFogStart);
+      const distFromFogStart = Math.max(0, distance - (typeof FOG_3D_START_DISTANCE !== 'undefined' ? FOG_3D_START_DISTANCE : 1.5)); // Fog starts closer
+      fogFactor = Math.exp(-(typeof FOG_3D_DENSITY !== 'undefined' ? FOG_3D_DENSITY : 0.4) * distFromFogStart * distFromFogStart); // Denser fog
       fogFactor = Math.max(0, Math.min(1, fogFactor)); // Clamp to [0, 1]
     } else {
       // Fallback to linear fog if shader disabled
@@ -3073,8 +3346,8 @@ class GameManager {
         const approximateDistance = FOG_3D_START_DISTANCE + perspectiveRatio * rayDistance;
 
         // Calculate exponential fog factor
-        const distFromFogStart = Math.max(0, approximateDistance - FOG_3D_START_DISTANCE);
-        const fogFactor = Math.exp(-FOG_3D_DENSITY * distFromFogStart * distFromFogStart);
+        const distFromFogStart = Math.max(0, approximateDistance - (typeof FOG_3D_START_DISTANCE !== 'undefined' ? FOG_3D_START_DISTANCE : 1.5)); // Fog starts closer
+        const fogFactor = Math.exp(-(typeof FOG_3D_DENSITY !== 'undefined' ? FOG_3D_DENSITY : 0.4) * distFromFogStart * distFromFogStart); // Denser fog
         const clampedFogFactor = Math.max(0, Math.min(1, fogFactor));
 
         // Apply fog to this pixel
@@ -3230,6 +3503,8 @@ class GameManager {
     const drawStartX = Math.max(0, Math.floor(spriteScreenX - spriteScreenW / 2));
     const drawEndX   = Math.min(SCREEN_WIDTH, Math.floor(spriteScreenX + spriteScreenW / 2));
     const cameraOffset = this.cameraScreenOffsetPx();
+    
+    // Les zombies montent du sol pendant le spawn
     let drawStartY = Math.max(0, Math.floor(SCREEN_HEIGHT / 2 - spriteScreenH / 2 + cameraOffset));
     let drawEndY   = Math.min(SCREEN_HEIGHT, Math.floor(SCREEN_HEIGHT / 2 + spriteScreenH / 2 + cameraOffset));
 
@@ -3242,30 +3517,6 @@ class GameManager {
     }
 
     if (drawStartX >= drawEndX || drawStartY >= drawEndY) return;
-
-    if (isZombieHumanoid) {
-      // Try texture-based rendering first if available
-      if (shouldRenderZombieAsTexture(this)) {
-        // Add distance-based alpha fade for zombies (similar to orbs)
-        const zombieRenderDistFade = Math.max(0, 1 - (spriteData.dist / MAX_RAY_DISTANCE / 0.5));
-        const zombieAlphaFade = constrain(zombieRenderDistFade, 0, 1);
-        
-        const textureDrawn = drawZombieTextureSprite(this, pixels, {
-          screenX: spriteScreenX,
-          screenY: SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx(),
-          screenWidth: spriteScreenW,
-          screenHeight: spriteScreenH,
-          worldAngle: spriteData.obj.bodyAngle || 0,
-          distance: spriteData.dist,
-          zBuffer: this.zBuffer,
-          alphaFade: zombieAlphaFade,  // Pass alpha fade to rendering function
-        });
-        if (textureDrawn) return;
-      }
-      // Fall back to volumetric rendering
-      this.drawZombieVolumetricToBuffer(spriteData, drawStartX, drawEndX);
-      return;
-    }
 
     const rawFog = constrain(1 - (spriteData.dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
     const fogFactor = Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
@@ -3396,6 +3647,57 @@ class GameManager {
       // No margin - sprites must be in front of or exactly at wall depth
       if (transformY > wallDepth) continue;
 
+      // Draw health bar for zombies in 2D
+      if (isZombieHumanoid) {
+        const barWidth = spriteScreenW * 0.6;
+        const barHeight = 4;
+        const barY = drawStartY - 15; // Un peu plus haut
+        const healthFrac = spriteData.obj.health / spriteData.obj.maxHealth;
+        
+        if (sx >= spriteScreenX - barWidth / 2 && sx <= spriteScreenX + barWidth / 2) {
+          const barX = sx - (spriteScreenX - barWidth / 2);
+          for (let by = 0; by < barHeight; by++) {
+            const syBar = Math.floor(barY + by);
+            if (syBar < 0 || syBar >= SCREEN_HEIGHT) continue;
+            const dIdx = 4 * (syBar * SCREEN_WIDTH + sx);
+            if (barX <= barWidth * healthFrac) {
+              pixels[dIdx] = 0;
+              pixels[dIdx + 1] = 255;
+              pixels[dIdx + 2] = 0;
+            } else {
+              pixels[dIdx] = 255;
+              pixels[dIdx + 1] = 0;
+              pixels[dIdx + 2] = 0;
+            }
+            pixels[dIdx + 3] = 255;
+          }
+        }
+      }
+
+      // --- Rendu spécifique du corps des zombies (CORRECTION VISIBILITE 2D) ---
+      if (isZombieHumanoid) {
+        const verticalSpawnOffset = 0;
+        let textureDrawn = false;
+        if (shouldRenderZombieAsTexture(this)) {
+          const zombieRenderDistFade = Math.max(0, 1 - (spriteData.dist / MAX_RAY_DISTANCE / 0.5));
+          textureDrawn = drawZombieTextureSprite(this, pixels, {
+            screenX: spriteScreenX,
+            screenY: SCREEN_HEIGHT / 2 + cameraOffset + verticalSpawnOffset,
+            screenWidth: spriteScreenW,
+            screenHeight: spriteScreenH,
+            worldAngle: spriteData.obj.bodyAngle || 0,
+            distance: spriteData.dist,
+            zBuffer: this.zBuffer,
+            alphaFade: constrain(zombieRenderDistFade, 0, 1),
+            onlyColumn: sx 
+          });
+        }
+        if (!textureDrawn) {
+          this.drawZombieVolumetricToBuffer(spriteData, sx, sx + 1);
+        }
+        continue; // On peut maintenant passer à la colonne suivante
+      }
+
       let zombieTx = 0;
       if (isZombieHumanoid) {
         zombieTx = Math.min(zombieTexW - 1, Math.floor((sx - drawStartX) * zombieStepX));
@@ -3474,8 +3776,8 @@ class GameManager {
     const centerY = SCREEN_HEIGHT / 2 + this.cameraScreenOffsetPx();
 
     const fogFromDistance = (dist) => {
-      const rawFog = constrain(1 - (dist / MAX_RAY_DISTANCE) * FOG_DENSITY, 0, 1);
-      return Math.max(rawFog, AMBIENT_LIGHT_MINIMUM);
+      const distFromFogStart = Math.max(0, dist - (typeof FOG_3D_START_DISTANCE !== 'undefined' ? FOG_3D_START_DISTANCE : 1.5)); // Fog starts closer
+      return Math.max(0, Math.min(1, Math.exp(-(typeof FOG_3D_DENSITY !== 'undefined' ? FOG_3D_DENSITY : 0.4) * distFromFogStart * distFromFogStart))); // Denser fog
     };
 
     const xStart = Math.max(0, drawStartX);
@@ -5014,19 +5316,39 @@ class GameManager {
     fill(230, 240, 255);
     text("SCORE: " + Math.floor(this.score), 18, 18);
     text("TIME: " + this.survivalSeconds().toFixed(1) + "s", 18, 42);
-    fill(255, 220, 110);
-    text("AMMO: " + this.weaponAmmo + "/" + WEAPON_MAX_AMMO, 18, 66);
+    
+    // Weapon ammo display: Magazine / Inventory
+    const now = millis();
+    const isReloading = now < this.weaponReloadingUntilMs;
+    const ammoColor = isReloading ? [255, 165, 100] : [255, 220, 110];
+    fill(ammoColor[0], ammoColor[1], ammoColor[2]);
+    const maxInv = this.getMaxInventoryAmmo();
+    text(`MAG: ${this.weaponMagazineAmmo}/${this.getMaxMagazineSize()}  |  ${this.weaponInventoryAmmo}/${maxInv}`, 18, 66);
 
-    // Weapon ammo bar
-    const ammoFrac = constrain(this.weaponAmmo / WEAPON_MAX_AMMO, 0, 1);
+    // Magazine bar
+    const magFrac = constrain(this.weaponMagazineAmmo / WEAPON_MAGAZINE_SIZE, 0, 1);
     fill(40, 42, 48, 210);
     rect(18, 92, 220, 16, 4);
-    fill(255, 220, 110);
-    rect(18, 92, 220 * ammoFrac, 16, 4);
-
-    textSize(14);
-    fill(255, 165, 120);
-    text(waveText, 18, 114);
+    fill(ammoColor[0], ammoColor[1], ammoColor[2]);
+    rect(18, 92, 220 * magFrac, 16, 4);
+    
+    // Reload progress bar
+    if (isReloading) {
+      const reloadFrac = 1 - ((this.weaponReloadingUntilMs - now) / WEAPON_RELOAD_DURATION_MS);
+      fill(200, 200, 50, 150);
+      rect(18, 110, 220 * reloadFrac, 8, 2);
+      fill(200, 200, 50);
+      textSize(11);
+      text(`RECHARGEMENT... ${(reloadFrac * 100).toFixed(0)}%`, 18, 120);
+      // Wave text moved down when reloading
+      textSize(14);
+      fill(255, 165, 120);
+      text(waveText, 18, 134);
+    } else {
+      textSize(14);
+      fill(255, 165, 120);
+      text(waveText, 18, 114);
+    }
 
     fill(120, 245, 210);
     text(objectiveText, 18, 132);
@@ -5124,13 +5446,13 @@ class GameManager {
 
     // --- Inventory quickbar (slots 1/2/3) ---
     const slots = [
-      { key: "1", label: "Ammo", count: this.inventory.ammoPack, col: [255, 220, 110] },
-      { key: "2", label: "Score", count: this.inventory.scoreShard, col: [255, 255, 150] },
+      { key: "1", label: "Pistol", count: "", col: [200, 200, 200] },
+      { key: "2", label: "Bomb", count: this.inventory.bomb, col: [255, 100, 100] },
       { key: "3", label: "Pulse", count: this.inventory.pulseCore, col: [220, 180, 255] },
     ];
 
-    const slotW = 116;
-    const slotH = 62;
+    const slotW = 140;
+    const slotH = 80;
     const gap = 10;
     const totalW = slotW * slots.length + gap * (slots.length - 1);
     const startX = SCREEN_WIDTH / 2 - totalW / 2;
@@ -5158,10 +5480,10 @@ class GameManager {
       fill(slot.col[0], slot.col[1], slot.col[2], alpha);
       rect(x + 8, y + 8, 12, 12, 2);
 
-      textSize(14);
+      textSize(16);
       fill(230, 240, 255, hasItem ? 255 : 140);
-      text("[" + slot.key + "] " + slot.label, x + 26, y + 8);
-      textSize(22);
+      text("[" + slot.key + "] " + slot.label, x + 30, y + 10);
+      textSize(26);
       fill(255, 255, 255, hasItem ? 255 : 120);
       text(String(slot.count), x + 12, y + 28);
 
@@ -5190,10 +5512,10 @@ class GameManager {
         this.player.posY - this.punchMachine.posY
       );
       if (distToMachine < 2.2) {
-        let hintText = `F - PUNCH MACHINE (${PUNCH_MACHINE_COST} pts)`;
+        let hintText = `Q - AMELIORER L'ARME (${this.punchMachinePrice} G)`;
         let hintCol = [225, 185, 255];
         if (this.waveNumber < PUNCH_MACHINE_UNLOCK_WAVE) {
-          hintText = `F - PUNCH VERROUILLÉE (vague ${PUNCH_MACHINE_UNLOCK_WAVE})`;
+          hintText = `Q - VERROUILLEE (Vague ${PUNCH_MACHINE_UNLOCK_WAVE})`;
           hintCol = [255, 165, 165];
         }
 
@@ -5529,4 +5851,121 @@ class GameManager {
     // Fog is now handled via reduced ambient light and block darkness over distance
     // No visual vignette overlay is drawn
   }
+
+  /**
+   * ========== MUSIC SYSTEM ==========
+   * Placeholder methods for audio/music management.
+   * These methods are called at key game state transitions.
+   * Uncomment and implement when you're ready to add music to the game.
+   * 
+   * NOTE: These methods work independently of 2D/3D mode selection.
+   * Music will play the same regardless of rendering mode.
+   */
+
+  // Play a music track by name
+  // Usage: this.playMusic('gameplay') or this.playMusic('victory')
+  /*
+  playMusic(trackName) {
+    if (!this.audioManager || !this.isMusicEnabled) return;
+    
+    console.log(`🎵 Playing music: ${trackName}`);
+    
+    // Stop current music if any
+    if (this.musicTrack) {
+      this.musicTrack.stop();
+    }
+    
+    // Load and play new music track
+    // You can customize track selection based on game mode
+    let trackPath;
+    if (trackName === 'gameplay') {
+      trackPath = this.use3DMode ? 'assets/music/gameplay-3d.mp3' : 'assets/music/gameplay-2d.mp3';
+      // Or use same track for both: trackPath = 'assets/music/gameplay.mp3';
+    } else if (trackName === 'victory') {
+      trackPath = 'assets/music/victory.mp3';
+    } else if (trackName === 'game-over') {
+      trackPath = 'assets/music/game-over.mp3';
+    } else {
+      trackPath = `assets/music/${trackName}.mp3`;
+    }
+    
+    // Load and play the track
+    this.musicTrack = new Audio(trackPath);
+    this.musicTrack.volume = this.musicVolume * this.masterVolume;
+    this.musicTrack.loop = trackName === 'gameplay';  // Loop gameplay, don't loop ending tracks
+    this.musicTrack.play().catch(err => {
+      console.warn(`⚠️  Failed to play music: ${trackName}`, err);
+    });
+  }
+  */
+
+  // Pause current music
+  /*
+  pauseMusic() {
+    if (!this.musicTrack) return;
+    console.log("⏸️  Music paused");
+    this.musicTrack.pause();
+  }
+  */
+
+  // Resume current music
+  /*
+  resumeMusic() {
+    if (!this.musicTrack) return;
+    console.log("▶️  Music resumed");
+    this.musicTrack.play().catch(err => {
+      console.warn("⚠️  Failed to resume music:", err);
+    });
+  }
+  */
+
+  // Stop and unload current music
+  /*
+  stopMusic() {
+    if (!this.musicTrack) return;
+    console.log("⏹️  Music stopped");
+    this.musicTrack.stop();
+    this.musicTrack = null;
+  }
+  */
+
+  // Set master volume (0.0 to 1.0)
+  /*
+  setMasterVolume(volume) {
+    this.masterVolume = Math.max(0, Math.min(1, volume));
+    if (this.musicTrack) {
+      this.musicTrack.volume = this.musicVolume * this.masterVolume;
+    }
+    console.log(`🔊 Master volume: ${(this.masterVolume * 100).toFixed(0)}%`);
+  }
+  */
+
+  // Set music volume specifically (0.0 to 1.0)
+  /*
+  setMusicVolume(volume) {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.musicTrack) {
+      this.musicTrack.volume = this.musicVolume * this.masterVolume;
+    }
+    console.log(`🎵 Music volume: ${(this.musicVolume * 100).toFixed(0)}%`);
+  }
+  */
+
+  // Toggle music on/off
+  /*
+  toggleMusic() {
+    this.isMusicEnabled = !this.isMusicEnabled;
+    if (this.isMusicEnabled) {
+      console.log("🎵 Music enabled");
+      if (this.musicTrack && this.gameState === "playing") {
+        this.musicTrack.play();
+      }
+    } else {
+      console.log("🔇 Music disabled");
+      if (this.musicTrack) {
+        this.musicTrack.pause();
+      }
+    }
+  }
+  */
 }

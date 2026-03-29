@@ -19,6 +19,10 @@ let canvas2D = null;     // Main 2D canvas
 
 function preload() {
   preloadExternalBlockTextures();
+  // Expose preloadZombieSkinTexture globally for p5 preload
+  if (typeof window.preloadZombieSkinTexture !== 'function' && typeof preloadZombieSkinTexture === 'function') {
+    window.preloadZombieSkinTexture = preloadZombieSkinTexture;
+  }
   preloadZombieSkinTexture();
 }
 
@@ -35,6 +39,10 @@ function setup() {
   cacheAllTexturePixels();      // pre-extract pixel data for fast raycaster access
   generateWorldMap();
 
+  // Expose GameManager globally if not already
+  if (typeof window.GameManager !== 'function' && typeof GameManager === 'function') {
+    window.GameManager = GameManager;
+  }
   gameManager = new GameManager();
   window.gameManager = gameManager;  // Expose to global window for texture loader
   gameManager.initDOM();
@@ -162,13 +170,45 @@ function mousePressed() {
 }
 
 function keyPressed() {
-  if (!gameManager) return;
+  if (!gameManager) {
+    console.log('[keyPressed] Pas de gameManager');
+    return;
+  }
+
 
   if ((keyCode === ENTER || key === " ") && gameManager.handleStartInput()) {
     return false;
   }
 
+  // Sélection d'item actif (1/2/3)
+  if (key === '1') {
+    gameManager.selectActiveItem(0);
+    return false;
+  }
+  if (key === '2') {
+    gameManager.selectActiveItem(1);
+    return false;
+  }
+  if (key === '3') {
+    gameManager.selectActiveItem(2);
+    return false;
+  }
+
   if (gameManager.handleHotbarInput(key, keyCode)) {
+    return false;
+  }
+
+
+  // Reload weapon on 'R' or 'r' key
+  if (key === 'r' || key === 'R') {
+    gameManager.reloadWeapon();
+    return false;
+  }
+
+  // Toggle 3D tracer on 'T' or 't' key
+  if (key === 't' || key === 'T') {
+    console.log('[keyPressed] T pressed, gameState:', gameManager.gameState);
+    gameManager.toggleTracer3D();
     return false;
   }
 

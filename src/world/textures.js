@@ -39,11 +39,20 @@ let preloadedExternalTextures = {};
 function preloadExternalBlockTextures() {
   preloadedExternalTextures = {};
 
+  const isLocalFile = window.location.protocol === 'file:';
+
   for (const blockId of Object.keys(EXTERNAL_BLOCK_TEXTURE_PATHS)) {
     const imgPath = resolveTexturePath(blockId);
     
-    // Skip null paths (like floor texture which is generated procedurally)
-    if (imgPath === null) {
+    // Skip null, undefined or empty paths (like floor texture which is generated procedurally)
+    if (!imgPath || (typeof imgPath === 'string' && imgPath.trim() === "")) {
+      preloadedExternalTextures[blockId] = null;
+      continue;
+    }
+
+    // Prevent CORS errors on file:// protocol by skipping external PNG loads
+    if (isLocalFile && !imgPath.startsWith('data:')) {
+      console.warn(`⚠️ Block ${blockId}: Cannot load external texture ${imgPath} on file:// protocol. Use a local server.`);
       preloadedExternalTextures[blockId] = null;
       continue;
     }
